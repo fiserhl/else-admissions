@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Else Graduate Admissions Tracker & Dashboard</title>
+<style>
+  :root {
+    --purple: #4b2e83;
+    --purple-dark: #3a2466;
+    --purple-light: #6b4ba3;
+    --gold: #c5a572;
+    --bg: #f7f5f0;
+    --card: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --success: #15803d;
+    --warn: #b45309;
+    --danger: #b91c1c;
+    --info: #1d4ed8;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -1px rgba(0,0,0,0.04);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; }
+  body {
+    font-family: "Charter","Iowan Old Style","Georgia",serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  h1,h2,h3,h4 { font-weight: 600; margin: 0 0 0.5em; }
+  h1 { font-size: 1.75rem; letter-spacing:-0.01em;}
+  h2 { font-size: 1.25rem;}
+  h3 { font-size: 1.05rem;}
+  a { color: var(--purple); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button, input, select, textarea { font-family: inherit; font-size: 0.95rem; }
+  input[type=text], input[type=email], input[type=tel], input[type=url], input[type=date], input[type=number], input[type=password], select, textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink);
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--purple-light); outline-offset:-1px;  border-color: var(--purple); }
+  button { cursor: pointer; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border: 1px solid var(--purple); background: var(--purple); color:#fff;
+    border-radius: 6px; font-weight: 500; font-size: 0.9rem; transition: all 0.15s;
+  }
+  .btn:hover { background: var(--purple-dark); }
+  .btn.secondary { background: #fff; color: var(--purple); }
+  .btn.secondary:hover { background: #f3eef9;}
+  .btn.ghost { background: transparent; color: var(--purple); border-color: transparent;}
+  .btn.ghost:hover { background: #eee;}
+  .btn.danger { background: var(--danger); border-color: var(--danger); color:#fff;}
+  .btn.danger:hover { background:#991b1b;}
+  .btn.small { padding: 5px 10px; font-size: 0.82rem;}
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed;}
+
+  /* Login */
+  .login-wrap {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--purple) 0%, var(--purple-dark) 100%);
+  }
+  .login-card {
+    background: var(--card); padding: 40px; border-radius: var(--radius); box-shadow: var(--shadow-md);
+    width: 100%; max-width: 380px;
+  }
+  .login-card h1 { color: var(--purple); margin-bottom:4px; font-size: 1.25rem;}
+  .login-card .sub { color: var(--muted); font-size: 0.88rem; margin-bottom:20px; font-style: italic;}
+  .login-card label { display:block; font-weight:500; margin:12px 0 4px; font-size: 0.85rem; color: var(--muted);}
+  .login-err { color: var(--danger); font-size:0.85rem; margin-top:10px; min-height:1.2em; }
+
+  /* App shell */
+  .topbar {
+    background: var(--purple); color: #fff; padding: 12px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 3px solid var(--gold);
+  }
+  .topbar .brand { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.01em; }
+  .topbar .brand small { font-weight: 400; opacity: 0.85; font-size:0.78rem; display:block; letter-spacing:0.04em;}
+  .topbar .user-area { display: flex; align-items: center; gap: 14px; font-size: 0.88rem;}
+  .topbar .user-area .who { opacity: 0.9;}
+  .topbar .iconbtn { background: transparent; border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 5px 12px; border-radius: 4px;}
+  .topbar .iconbtn:hover { background: rgba(255,255,255,0.15);}
+
+  .main { max-width: 1400px; margin: 0 auto; padding: 20px 24px 60px; }
+
+  /* Dashboard */
+  .dash { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 24px;}
+  .dash .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .dash .card .label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500;}
+  .dash .card .value { font-size: 1.9rem; font-weight: 600; color: var(--purple); margin-top: 4px; line-height: 1;}
+  .dash .card .sub-detail { color: var(--muted); font-size: 0.78rem; margin-top: 6px; font-style: italic;}
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--line); margin-bottom: 20px; flex-wrap: wrap;}
+  .tabs .tab {
+    background: transparent; border: none; padding: 10px 16px; color: var(--muted); cursor: pointer;
+    font-size: 0.95rem; font-weight: 500; border-bottom: 3px solid transparent; margin-bottom: -2px;
+    font-family: inherit;
+  }
+  .tabs .tab:hover { color: var(--purple);}
+  .tabs .tab.active { color: var(--purple); border-bottom-color: var(--purple);}
+
+  /* Panel + toolbar */
+  .panel {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px; box-shadow: var(--shadow);
+  }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px;}
+  .toolbar input[type=search], .toolbar input[type=text] { min-width: 220px; max-width: 320px;}
+  .toolbar .spacer { flex: 1; }
+
+  /* Table */
+  table.data { width: 100%; border-collapse: collapse; font-size: 0.92rem;}
+  table.data thead th {
+    text-align: left; padding: 10px 8px; background: #faf7f1; border-bottom: 1px solid var(--line);
+    font-weight: 600; color: var(--purple); font-size: 0.82rem; letter-spacing: 0.04em; text-transform: uppercase;
+    position: sticky; top: 0;
+  }
+  table.data tbody td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top;}
+  table.data tbody tr:hover { background: #faf7f1; cursor: pointer;}
+  table.data tbody tr.selected { background: #f3eef9;}
+  .pill { display:inline-block; padding: 2px 8px; border-radius:12px; font-size: 0.72rem; font-weight: 500; letter-spacing: 0.02em; text-transform: uppercase;}
+  .pill.inquiry { background: #dbeafe; color: #1d4ed8;}
+  .pill.in_progress { background: #fef3c7; color: #b45309;}
+  .pill.submitted { background: #e9d5ff; color: #6b21a8;}
+  .pill.complete  { background: #dcfce7; color: #15803d;}
+  .pill.admitted  { background: #bbf7d0; color: #14532d;}
+  .pill.enrolled  { background: #bfdbfe; color: #1e3a8a;}
+  .pill.declined  { background: #fee2e2; color: #991b1b;}
+  .pill.withdrawn { background: #e5e7eb; color: #374151;}
+  .pill.alum      { background: var(--gold); color: #3a2466;}
+
+  /* Modal */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(20,20,30,0.55); display: none; align-items: flex-start; justify-content: center; z-index: 100; padding: 20px; overflow-y:auto;}
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: var(--card); border-radius: var(--radius); max-width: 780px; width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2); margin-top: 40px;
+  }
+  .modal header { padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between;}
+  .modal header h2 { color: var(--purple); margin:0; font-size: 1.2rem;}
+  .modal .close { background: transparent; border: none; font-size: 1.4rem; color: var(--muted); cursor: pointer;}
+  .modal .body { padding: 20px;}
+  .modal footer { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; background: #faf9f6; border-radius: 0 0 var(--radius) var(--radius);}
+
+  /* Form grid */
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(2, 1fr);}
+  .grid .col-full { grid-column: 1 / -1;}
+  .grid label { display: block; font-weight: 500; font-size: 0.85rem; color: var(--muted); margin-bottom: 3px;}
+  .section-head { color: var(--purple); font-weight: 600; font-size: 1rem; margin: 18px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line);}
+  .section-head:first-child { margin-top: 0;}
+
+  /* Checkboxes */
+  .chk-group { display: flex; flex-wrap: wrap; gap: 10px 18px;}
+  .chk-group label { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; color: var(--ink); font-weight: normal;}
+  .chk-group input[type=checkbox] { margin: 0;}
+
+  /* Alumni match banner */
+  .alumni-banner {
+    background: #faf0df; border: 1px solid var(--gold); border-left: 4px solid var(--gold);
+    padding: 12px 16px; border-radius: 4px; margin-bottom: 14px;
+  }
+  .alumni-banner .title { color: var(--purple); font-weight: 600; margin-bottom: 4px;}
+  .alumni-banner .meta { color: var(--muted); font-size: 0.85rem;}
+  .alumni-banner .actions { margin-top: 10px; display: flex; gap: 8px;}
+
+  /* Toast */
+  #toast { position: fixed; top: 20px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px;}
+  .toast-item { background: var(--ink); color: #fff; padding: 12px 16px; border-radius: 6px; box-shadow: var(--shadow-md); min-width: 240px; font-size:0.9rem; opacity: 0; transform: translateY(-6px); transition: all 0.2s;}
+  .toast-item.show { opacity: 1; transform: translateY(0);}
+  .toast-item.success { background: var(--success);}
+  .toast-item.error { background: var(--danger);}
+  .toast-item.info { background: var(--info);}
+
+  /* Utility */
+  .muted { color: var(--muted);}
+  .hidden { display: none !important;}
+  .small { font-size: 0.85rem;}
+  .tiny { font-size: 0.75rem;}
+  .mono { font-family: ui-monospace, Menlo, monospace;}
+  .center { text-align: center;}
+  .loader { display:inline-block; width:14px; height:14px; border:2px solid #ddd; border-top-color:var(--purple); border-radius:50%; animation: spin 0.8s linear infinite;}
+  @keyframes spin { to { transform: rotate(360deg);} }
+
+  @media (max-width: 720px) {
+    .grid { grid-template-columns: 1fr;}
+    .main { padding: 14px;}
+    .topbar { padding: 10px 14px;}
+    table.data { font-size: 0.82rem;}
+    table.data thead th, table.data tbody td { padding: 7px 5px;}
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen" class="login-wrap">
+  <div class="login-card">
+    <h1>Else Graduate Admissions</h1>
+    <div class="sub">Tracker &amp; Dashboard — Millsaps College</div>
+    <label>Username</label>
+    <input id="login-user" type="text" autocomplete="username">
+    <label>Password</label>
+    <input id="login-pass" type="password" autocomplete="current-password">
+    <div class="login-err" id="login-err"></div>
+    <button class="btn" style="width:100%; margin-top:14px; justify-content:center;" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden">
+  <div class="topbar">
+    <div class="brand">
+      Else Graduate Admissions
+      <small>Tracker &amp; Dashboard — Millsaps College</small>
+    </div>
+    <div class="user-area">
+      <span class="who" id="who"></span>
+      <button class="iconbtn" onclick="openPasswordModal()">Settings</button>
+      <button class="iconbtn" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- DASHBOARD -->
+    <div class="dash" id="dash">
+      <div class="card">
+        <div class="label">Total Prospects</div>
+        <div class="value" id="d-total">—</div>
+        <div class="sub-detail" id="d-total-sub"></div>
+      </div>
+      <div class="card">
+        <div class="label">Contacts This Month</div>
+        <div class="value" id="d-month">—</div>
+        <div class="sub-detail" id="d-month-sub"></div>
+      </div>
+      <div class="card">
+        <div class="label">Applications in Progress</div>
+        <div class="value" id="d-inprog">—</div>
+        <div class="sub-detail">Actively working</div>
+      </div>
+      <div class="card">
+        <div class="label">Applications Complete</div>
+        <div class="value" id="d-complete">—</div>
+        <div class="sub-detail">Submitted &amp; beyond</div>
+      </div>
+      <div class="card">
+        <div class="label">Research Pending</div>
+        <div class="value" id="d-research">—</div>
+        <div class="sub-detail">Items to review</div>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-tab="prospects">Prospects</button>
+      <button class="tab" data-tab="import">Import</button>
+      <button class="tab" data-tab="research">Research</button>
+      <button class="tab" data-tab="messages">Messages</button>
+      <button class="tab" data-tab="audit">Audit Log</button>
+    </div>
+
+    <!-- PROSPECTS TAB -->
+    <div id="tab-prospects" class="tab-panel">
+      <div class="panel">
+        <div class="toolbar">
+          <input type="search" id="p-search" placeholder="Search name, email, organization…" oninput="renderProspects()">
+          <select id="p-status" onchange="renderProspects()">
+            <option value="">All statuses</option>
+            <option value="inquiry">Inquiry</option>
+            <option value="in_progress">Application in Progress</option>
+            <option value="submitted">Submitted</option>
+            <option value="complete">Complete</option>
+            <option value="admitted">Admitted</option>
+            <option value="enrolled">Enrolled</option>
+            <option value="declined">Declined</option>
+            <option value="withdrawn">Withdrawn</option>
+          </select>
+          <select id="p-program" onchange="renderProspects()">
+            <option value="">All programs</option>
+            <option value="MBA">MBA</option>
+            <option value="MBAA">MBAA</option>
+            <option value="MACC">MACC</option>
+            <option value="MACCA">MACCA</option>
+            <option value="data_analytics_cert">Data Analytics Cert</option>
+            <option value="marketing_cert">Marketing Cert</option>
+            <option value="nonprofit_cert">Non-Profit Cert</option>
+          </select>
+          <select id="p-term" onchange="renderProspects()">
+            <option value="">All entry terms</option>
+            <option value="summer">Summer</option>
+            <option value="fall">Fall</option>
+            <option value="spring">Spring</option>
+          </select>
+          <select id="p-assigned" onchange="renderProspects()">
+            <option value="">All assigned</option>
+          </select>
+          <div class="spacer"></div>
+          <button class="btn" onclick="openProspectModal()">+ Add Prospect</button>
+          <button class="btn secondary" onclick="exportProspectsCsv()">Export CSV</button>
+        </div>
+        <div id="p-count" class="small muted" style="margin-bottom:10px;"></div>
+        <div style="overflow-x:auto; max-height: 65vh;">
+          <table class="data" id="p-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Program(s)</th>
+                <th>Entry Term</th>
+                <th>Status</th>
+                <th>Assigned</th>
+                <th>First Contact</th>
+              </tr>
+            </thead>
+            <tbody id="p-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- IMPORT TAB -->
+    <div id="tab-import" class="tab-panel hidden">
+      <div class="panel">
+        <h2>Import from Spreadsheet</h2>
+        <p class="muted small">Paste CSV data below (first row = headers). On import, each row is checked against the Alumni Database — matches are flagged for review before copy-over.</p>
+        <p class="small"><strong>Required columns:</strong> first_name OR last_name OR email. <strong>Optional:</strong> preferred_name, cell_phone, phone, linkedin_url, source_of_contact, first_contact_date, potential_entry_term, programs_of_interest, notes.</p>
+        <textarea id="import-csv" rows="10" placeholder="first_name,last_name,email,cell_phone,source_of_contact,potential_entry_term,programs_of_interest&#10;Jane,Doe,jane@example.com,601-555-1212,Open House,fall,MBA;MACC"></textarea>
+        <div class="toolbar" style="margin-top:10px;">
+          <button class="btn" onclick="parseImportCsv()">Parse &amp; Preview</button>
+          <button class="btn secondary" onclick="document.getElementById('import-csv').value=''">Clear</button>
+        </div>
+        <div id="import-preview" style="margin-top:20px;"></div>
+      </div>
+    </div>
+
+    <!-- RESEARCH TAB -->
+    <div id="tab-research" class="tab-panel hidden">
+      <div class="panel">
+        <h2>Research &amp; Enrichment</h2>
+        <p class="muted small">Use People Data Labs to enrich prospect records. Same API key and rules as the Else CRM.</p>
+        <div class="toolbar" style="margin-top:12px;">
+          <button class="btn" onclick="alert('Enrichment feature is scaffolded. PDL integration will be enabled in the next build once a prospect has records to enrich. Enrichment queue table is live.')">Enrich Single Contact</button>
+          <button class="btn secondary" onclick="loadEnrichmentQueue()">Refresh Queue</button>
+        </div>
+        <div id="research-queue" style="margin-top:16px;"></div>
+      </div>
+    </div>
+
+    <!-- MESSAGES TAB -->
+    <div id="tab-messages" class="tab-panel hidden">
+      <div class="panel">
+        <h2>Messages Sent</h2>
+        <p class="muted small">All emails and text messages sent from this platform. The monthly counter resets on the 1st of each month (Central time).</p>
+        <div style="overflow-x:auto; max-height:60vh;">
+          <table class="data" id="msg-table">
+            <thead>
+              <tr><th>When</th><th>Channel</th><th>Recipient</th><th>Subject</th><th>By</th><th>Status</th></tr>
+            </thead>
+            <tbody id="msg-tbody"><tr><td colspan="6" class="muted center">Switch to this tab to load.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- AUDIT LOG TAB -->
+    <div id="tab-audit" class="tab-panel hidden">
+      <div class="panel">
+        <h2>Audit Log</h2>
+        <p class="muted small">All actions taken in the system, newest first.</p>
+        <div style="overflow-x:auto; max-height:60vh;">
+          <table class="data">
+            <thead><tr><th>When</th><th>User</th><th>Action</th><th>Detail</th></tr></thead>
+            <tbody id="audit-tbody"><tr><td colspan="4" class="muted center">Switch to this tab to load.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PROSPECT MODAL -->
+<div class="modal-backdrop" id="prospect-modal">
+  <div class="modal">
+    <header>
+      <h2 id="prospect-modal-title">Add Prospect</h2>
+      <button class="close" onclick="closeProspectModal()">×</button>
+    </header>
+    <div class="body" id="prospect-modal-body">
+      <!-- Alumni match banner -->
+      <div id="alumni-match-banner"></div>
+
+      <div class="section-head">Identity</div>
+      <div class="grid">
+        <div><label>First Name *</label><input id="f-first" type="text"></div>
+        <div><label>Last Name *</label><input id="f-last" type="text"></div>
+        <div><label>Preferred Name</label><input id="f-pref" type="text"></div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="btn secondary" type="button" onclick="checkAlumniMatch()">🔍 Check Alumni Database</button>
+        </div>
+      </div>
+
+      <div class="section-head">Contact</div>
+      <div class="grid">
+        <div class="col-full"><label>Email</label><input id="f-email" type="email"></div>
+        <div><label>Phone (Cell)</label><input id="f-cell" type="tel"></div>
+        <div><label>Phone (Business)</label><input id="f-phone" type="tel"></div>
+        <div class="col-full"><label>LinkedIn URL</label><input id="f-linkedin" type="url" placeholder="https://linkedin.com/in/..."></div>
+      </div>
+
+      <div class="section-head">Admissions Details</div>
+      <div class="grid">
+        <div>
+          <label>Source of Contact</label>
+          <select id="f-source">
+            <option value="">— select —</option>
+            <option value="Self-Inquiry">Self-Inquiry</option>
+            <option value="Open House">Open House</option>
+            <option value="GMAT/GRE List">GMAT/GRE List</option>
+            <option value="Referral">Referral</option>
+            <option value="Website">Website</option>
+            <option value="Information Session">Information Session</option>
+            <option value="Career Fair">Career Fair</option>
+            <option value="Employer Partnership">Employer Partnership</option>
+            <option value="Social Media">Social Media</option>
+            <option value="Alumni Network">Alumni Network</option>
+            <option value="Faculty Referral">Faculty Referral</option>
+            <option value="Walk-In">Walk-In</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div><label>Date of First Contact</label><input id="f-firstdate" type="date"></div>
+        <div>
+          <label>Potential Entry Term</label>
+          <select id="f-term">
+            <option value="">—</option>
+            <option value="summer">Summer</option>
+            <option value="fall">Fall</option>
+            <option value="spring">Spring</option>
+          </select>
+        </div>
+        <div><label>Potential Entry Year</label><input id="f-year" type="number" min="2025" max="2035" placeholder="e.g. 2026"></div>
+        <div class="col-full">
+          <label>Program(s) of Interest</label>
+          <div class="chk-group" id="f-programs">
+            <label><input type="checkbox" value="MBA"> MBA</label>
+            <label><input type="checkbox" value="MBAA"> MBAA</label>
+            <label><input type="checkbox" value="MACC"> MACC</label>
+            <label><input type="checkbox" value="MACCA"> MACCA</label>
+            <label><input type="checkbox" value="data_analytics_cert"> Data Analytics Certification</label>
+            <label><input type="checkbox" value="marketing_cert"> Marketing Certification</label>
+            <label><input type="checkbox" value="nonprofit_cert"> Non-Profit Certification</label>
+          </div>
+        </div>
+        <div>
+          <label>Application Status</label>
+          <select id="f-appstatus">
+            <option value="inquiry">Inquiry</option>
+            <option value="in_progress">In Progress</option>
+            <option value="submitted">Submitted</option>
+            <option value="complete">Complete</option>
+            <option value="admitted">Admitted</option>
+            <option value="enrolled">Enrolled</option>
+            <option value="declined">Declined</option>
+            <option value="withdrawn">Withdrawn</option>
+          </select>
+        </div>
+        <div>
+          <label>Assigned To</label>
+          <select id="f-assigned">
+            <option value="">Unassigned</option>
+            <option>Fiser, Harvey</option>
+            <option>McCaa, Meg</option>
+            <option>Harp, Ryan</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-head">Notes</div>
+      <textarea id="f-notes" rows="4" placeholder="Any conversation notes, observations, follow-up details…"></textarea>
+
+      <div id="alumni-extra" class="hidden">
+        <div class="section-head">Alumni Reference (read-only copy from Alumni DB)</div>
+        <div class="grid">
+          <div><label>Grad Year</label><input id="f-gradyear" type="number" readonly></div>
+          <div><label>Alum Major</label><input id="f-major" type="text" readonly></div>
+          <div><label>Alumni Contact ID</label><input id="f-alumid" type="number" readonly></div>
+          <div><label>Organization</label><input id="f-org" type="text" readonly></div>
+          <div class="col-full"><label>Current Title</label><input id="f-title" type="text" readonly></div>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <button class="btn danger" id="btn-delete" style="margin-right:auto;" onclick="deleteProspect()">Delete</button>
+      <button class="btn ghost" onclick="closeProspectModal()">Cancel</button>
+      <button class="btn" onclick="saveProspect()">Save Prospect</button>
+    </footer>
+  </div>
+</div>
+
+<!-- PASSWORD MODAL -->
+<div class="modal-backdrop" id="pw-modal">
+  <div class="modal" style="max-width:460px;">
+    <header>
+      <h2>Account Settings</h2>
+      <button class="close" onclick="closePasswordModal()">×</button>
+    </header>
+    <div class="body">
+      <p class="small muted">Signed in as <span id="pw-user" class="mono"></span></p>
+      <div class="section-head">Change Password</div>
+      <div style="display:grid; gap:10px;">
+        <div><label class="small muted">Current Password</label><input id="pw-current" type="password"></div>
+        <div><label class="small muted">New Password</label><input id="pw-new" type="password"></div>
+        <div><label class="small muted">Confirm New Password</label><input id="pw-new2" type="password"></div>
+      </div>
+      <div id="pw-msg" class="small" style="margin-top:10px;min-height:1.2em;"></div>
+    </div>
+    <footer>
+      <button class="btn ghost" onclick="closePasswordModal()">Close</button>
+      <button class="btn" onclick="changePassword()">Update Password</button>
+    </footer>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+</body>
+</html>
