@@ -180,6 +180,9 @@ function renderProspects() {
   const ag = document.getElementById("p-assigned").value;
 
   const filtered = PROSPECTS_CACHE.filter(p => {
+    // Default view hides withdrawn/declined to prevent accidental outreach.
+    // User must explicitly select "Withdrawn" or "Declined" from the status dropdown to see them.
+    if (!st && (p.application_status === "withdrawn" || p.application_status === "declined")) return false;
     if (st && p.application_status !== st) return false;
     if (tm && p.potential_entry_term !== tm) return false;
     if (ag && p.assigned_to !== ag) return false;
@@ -192,7 +195,11 @@ function renderProspects() {
     return true;
   });
 
-  document.getElementById("p-count").textContent = `${filtered.length.toLocaleString()} prospect${filtered.length===1?"":"s"}`;
+  // Count of hidden withdrawn/declined in default view, for user awareness
+  const hiddenCount = !st ? PROSPECTS_CACHE.filter(p => p.application_status === "withdrawn" || p.application_status === "declined").length : 0;
+  const countText = `${filtered.length.toLocaleString()} prospect${filtered.length===1?"":"s"}`
+    + (hiddenCount > 0 ? ` · ${hiddenCount} withdrawn/declined hidden (filter by status to view)` : "");
+  document.getElementById("p-count").textContent = countText;
 
   const tbody = document.getElementById("p-tbody");
   if (filtered.length === 0) {
@@ -203,13 +210,14 @@ function renderProspects() {
     const name = displayName(p);
     const programs = (p.programs_of_interest || []).map(x => programLabel(x)).join(", ") || "<span class='muted'>—</span>";
     const alumPill = p.is_alum ? ` <span class="pill alum">Alum</span>` : "";
+    const dncPill  = p.do_not_contact ? ` <span class="pill declined" title="${escapeHtml(p.dnc_reason||'')}">🚫 DNC</span>` : "";
     return `
       <tr onclick="openProspectModal(${p.prospect_id})">
-        <td><strong>${escapeHtml(name)}</strong>${alumPill}</td>
+        <td><strong>${escapeHtml(name)}</strong>${alumPill}${dncPill}</td>
         <td>${escapeHtml(p.email||"")}</td>
         <td>${escapeHtml(p.cell_phone||p.phone||"")}</td>
         <td class="small">${programs}</td>
-        <td>${termLabel(p.potential_entry_term)} ${p.potential_entry_year||""}</td>
+        <td>${p.potential_entry_year||""} ${termLabel(p.potential_entry_term)}</td>
         <td><span class="pill ${p.application_status||'inquiry'}">${(p.application_status||'inquiry').replace(/_/g,' ')}</span></td>
         <td class="small">${escapeHtml(p.assigned_to||"")}</td>
         <td class="small">${p.first_contact_date ? formatDate(p.first_contact_date) : ""}</td>
@@ -259,11 +267,13 @@ function openProspectModal(id) {
   // clear form
   ["f-first","f-last","f-pref","f-email","f-cell","f-phone","f-linkedin",
    "f-source","f-firstdate","f-term","f-year","f-appstatus","f-assigned","f-notes",
-   "f-gradyear","f-major","f-alumid","f-org","f-title"].forEach(k => {
+   "f-gradyear","f-major","f-alumid","f-org","f-title","f-dnc-reason"].forEach(k => {
     const el = document.getElementById(k);
     if (el) el.value = "";
   });
   document.querySelectorAll("#f-programs input[type=checkbox]").forEach(cb => cb.checked = false);
+  document.getElementById("f-dnc").checked = false;
+  document.getElementById("f-dnc-detail").classList.add("hidden");
   document.getElementById("f-appstatus").value = "inquiry";
   document.getElementById("f-firstdate").value = new Date().toISOString().slice(0,10);
 
@@ -284,6 +294,9 @@ function openProspectModal(id) {
       document.getElementById("f-appstatus").value = p.application_status || "inquiry";
       document.getElementById("f-assigned").value = p.assigned_to || "";
       document.getElementById("f-notes").value    = p.notes || "";
+      document.getElementById("f-dnc").checked    = !!p.do_not_contact;
+      document.getElementById("f-dnc-reason").value = p.dnc_reason || "";
+      if (p.do_not_contact) document.getElementById("f-dnc-detail").classList.remove("hidden");
       (p.programs_of_interest || []).forEach(code => {
         const cb = document.querySelector(`#f-programs input[value="${code}"]`);
         if (cb) cb.checked = true;
@@ -311,6 +324,7 @@ async function saveProspect() {
   if (!first && !last) { toast("Please enter at least a first or last name.", "error"); return; }
 
   const programs = Array.from(document.querySelectorAll("#f-programs input:checked")).map(cb => cb.value);
+  const dncChecked = document.getElementById("f-dnc").checked;
 
   const record = {
     first_name:           first || null,
@@ -329,6 +343,9 @@ async function saveProspect() {
     application_status:   document.getElementById("f-appstatus").value || "inquiry",
     assigned_to:          document.getElementById("f-assigned").value || null,
     notes:                document.getElementById("f-notes").value || null,
+    do_not_contact:       dncChecked,
+    dnc_reason:           dncChecked ? (document.getElementById("f-dnc-reason").value.trim() || null) : null,
+    dnc_date:             dncChecked ? new Date().toISOString().slice(0,10) : null,
   };
 
   // If we have an alumni match cached and this is a new prospect, pull over fields
@@ -498,6 +515,12 @@ function dismissAlumniMatch() {
   ALUMNI_MATCH_CACHE = null;
   document.getElementById("alumni-match-banner").innerHTML = "";
   document.getElementById("alumni-extra").classList.add("hidden");
+}
+
+// Show/hide the DNC reason input when the checkbox changes
+function toggleDncReason() {
+  const on = document.getElementById("f-dnc").checked;
+  document.getElementById("f-dnc-detail").classList.toggle("hidden", !on);
 }
 
 // =========================================================================

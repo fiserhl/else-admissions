@@ -491,6 +491,18 @@
       <div class="section-head">Notes</div>
       <textarea id="f-notes" rows="4" placeholder="Any conversation notes, observations, follow-up details…"></textarea>
 
+      <div class="section-head">Contact Permissions</div>
+      <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:10px 14px;">
+        <label style="display:flex; align-items:center; gap:8px; font-size:0.92rem; color:var(--danger); font-weight:500;">
+          <input type="checkbox" id="f-dnc" onchange="toggleDncReason()">
+          🚫 Do Not Contact — exclude from all outreach (emails, texts, mailings)
+        </label>
+        <div id="f-dnc-detail" class="hidden" style="margin-top:8px;">
+          <label class="small muted">Reason</label>
+          <input id="f-dnc-reason" type="text" placeholder="e.g. Prospect requested removal on 4/17/26">
+        </div>
+      </div>
+
       <div id="alumni-extra" class="hidden">
         <div class="section-head">Alumni Reference (read-only copy from Alumni DB)</div>
         <div class="grid">
