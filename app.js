@@ -209,16 +209,28 @@ function populateAssignedFilter() {
     names.map(n => `<option ${n===current?"selected":""}>${escapeHtml(n)}</option>`).join("");
 }
 
-// Populate the Year pill group from the data we actually have (descending)
+// Populate the Year pill group — always show 2020..2029 plus any outlier years actually in data.
+// This way you can filter by any valid entry year even if nobody's currently assigned to it.
 function populateYearPills() {
   const host = document.getElementById("p-year-pills");
   if (!host) return;
-  const years = [...new Set(PROSPECTS_CACHE.map(p => p.potential_entry_year).filter(Boolean))]
-    .sort((a,b) => b - a); // newest first
-  host.innerHTML = years.map(y => {
+  // years actually assigned to prospects
+  const actualYears = PROSPECTS_CACHE.map(p => p.potential_entry_year).filter(Boolean);
+  const actualSet = new Set(actualYears);
+  // count per year for the badge
+  const counts = {};
+  actualYears.forEach(y => { counts[y] = (counts[y]||0)+1; });
+  // fixed range 2020-2029 + any year outside that range that exists in data
+  const fixedRange = [2029,2028,2027,2026,2025,2024,2023,2022,2021,2020];
+  const extras = [...actualSet].filter(y => y<2020 || y>2029).sort((a,b)=>b-a);
+  const allYears = [...extras, ...fixedRange];
+  host.innerHTML = allYears.map(y => {
+    const n = counts[y] || 0;
     const active = FILTER_YEARS.has(String(y)) ? " active" : "";
-    return `<button class="pill-btn${active}" data-val="${y}">${y}</button>`;
-  }).join("") || `<span class="tiny muted">No year data yet</span>`;
+    const dim = n === 0 ? " dim" : "";
+    const badge = n > 0 ? ` <span class="pill-count">${n}</span>` : "";
+    return `<button class="pill-btn${active}${dim}" data-val="${y}">${y}${badge}</button>`;
+  }).join("");
 }
 
 // ---- Source Event dropdown ----
@@ -277,15 +289,15 @@ function toggleEvent(cb) {
 }
 
 function updateEventButton() {
+  const label = document.getElementById("p-event-label");
   const badge = document.getElementById("p-event-count");
-  const toggle = document.getElementById("p-event-toggle");
-  if (!badge || !toggle) return;
+  if (!label || !badge) return;
   if (FILTER_EVENTS.size === 0) {
+    label.textContent = "Any event";
     badge.textContent = "";
-    toggle.firstChild.nodeValue = "Any event ";
   } else {
-    badge.textContent = `(${FILTER_EVENTS.size})`;
-    toggle.firstChild.nodeValue = "Filtered ";
+    label.textContent = "Filtered";
+    badge.textContent = ` (${FILTER_EVENTS.size})`;
   }
 }
 

@@ -137,14 +137,25 @@
     background: var(--purple); border-color: var(--purple); color: #fff;
   }
   .pill-btn.active:hover { background: var(--purple-dark);}
+  .pill-btn.dim { color: #9c9c9c; border-color: #e0e0e0; }
+  .pill-btn.dim:hover { color: var(--text); border-color: var(--line); }
+  .pill-count {
+    display: inline-block; margin-left: 5px; padding: 1px 6px;
+    font-size: 0.72rem; font-weight: 600;
+    background: rgba(74,35,90,0.09); color: var(--purple);
+    border-radius: 10px; font-variant-numeric: tabular-nums;
+  }
+  .pill-btn.active .pill-count { background: rgba(255,255,255,0.25); color: #fff; }
 
   /* Source Event dropdown checklist */
-  .pill-btn.dropdown-toggle { min-width: 140px; text-align: left; }
+  .pill-btn.dropdown-toggle { min-width: 140px; text-align: left; display: inline-flex; align-items: center; gap: 4px; }
   .event-dropdown {
     position: absolute; top: calc(100% + 4px); left: 0; z-index: 50;
     background: #fff; border: 1px solid var(--line); border-radius: 6px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.12);
     width: 340px; max-width: 90vw;
+    /* Safari: isolate this block so parent flex-wrap doesn't collapse it */
+    box-sizing: border-box;
   }
   .event-dropdown-head {
     display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--line);
@@ -395,7 +406,7 @@
             <div class="filter-group" style="position:relative;">
               <span class="filter-label">Source Event:</span>
               <button type="button" class="pill-btn dropdown-toggle" id="p-event-toggle" onclick="toggleEventDropdown(event)">
-                Any event <span id="p-event-count"></span> ▾
+                <span id="p-event-label">Any event</span><span id="p-event-count"></span> <span aria-hidden="true">▾</span>
               </button>
               <div id="p-event-dropdown" class="event-dropdown hidden">
                 <div class="event-dropdown-head">
