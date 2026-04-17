@@ -224,7 +224,7 @@ function displayName(p) {
 }
 function programLabel(code) {
   const map = {
-    MBA: "MBA", MBAA: "MBAA", MACC: "MACC", MACCA: "MACCA",
+    MBA: "MBA", EMBA: "EMBA", MBAA: "MBAA", MACC: "MACC", MACCA: "MACCA",
     data_analytics_cert: "Data Analytics Cert",
     marketing_cert: "Marketing Cert",
     nonprofit_cert: "Non-Profit Cert"
