@@ -30,6 +30,11 @@ let PROSPECTS_CACHE = [];     // in-memory cache (matches Else CRM pattern)
 let EDITING_ID = null;        // prospect_id being edited, or null for new
 let ALUMNI_MATCH_CACHE = null;// result from last checkAlumniMatch call
 
+// Multi-select filter state — each is a Set of selected values. Empty = "all".
+let FILTER_PROGRAMS = new Set();
+let FILTER_YEARS    = new Set();
+let FILTER_TERMS    = new Set();
+
 // --- Boot ---
 document.addEventListener("DOMContentLoaded", () => {
   const saved = sessionStorage.getItem("adm_user");
@@ -42,6 +47,22 @@ document.addEventListener("DOMContentLoaded", () => {
   // wire tab clicks
   document.querySelectorAll(".tabs .tab").forEach(t => {
     t.addEventListener("click", () => switchTab(t.dataset.tab));
+  });
+  // wire pill-filter clicks (delegated, since year pills are populated later)
+  document.addEventListener("click", e => {
+    const btn = e.target.closest(".pill-btn");
+    if (!btn) return;
+    const group = btn.closest(".pill-group");
+    if (!group) return;
+    const val = btn.dataset.val;
+    let set;
+    if (group.id === "p-program-pills") set = FILTER_PROGRAMS;
+    else if (group.id === "p-year-pills") set = FILTER_YEARS;
+    else if (group.id === "p-term-pills") set = FILTER_TERMS;
+    else return;
+    if (set.has(val)) set.delete(val); else set.add(val);
+    btn.classList.toggle("active");
+    renderProspects();
   });
   // login on Enter
   document.getElementById("login-pass").addEventListener("keyup", e => {
@@ -157,6 +178,7 @@ async function loadProspects() {
     if (error) throw error;
     PROSPECTS_CACHE = data || [];
     populateAssignedFilter();
+    populateYearPills();
     renderProspects();
   } catch (e) {
     console.error(e);
@@ -172,21 +194,58 @@ function populateAssignedFilter() {
     names.map(n => `<option ${n===current?"selected":""}>${escapeHtml(n)}</option>`).join("");
 }
 
+// Populate the Year pill group from the data we actually have (descending)
+function populateYearPills() {
+  const host = document.getElementById("p-year-pills");
+  if (!host) return;
+  const years = [...new Set(PROSPECTS_CACHE.map(p => p.potential_entry_year).filter(Boolean))]
+    .sort((a,b) => b - a); // newest first
+  host.innerHTML = years.map(y => {
+    const active = FILTER_YEARS.has(String(y)) ? " active" : "";
+    return `<button class="pill-btn${active}" data-val="${y}">${y}</button>`;
+  }).join("") || `<span class="tiny muted">No year data yet</span>`;
+}
+
+function clearFilters() {
+  FILTER_PROGRAMS.clear();
+  FILTER_YEARS.clear();
+  FILTER_TERMS.clear();
+  document.getElementById("p-search").value = "";
+  document.getElementById("p-status").value = "";
+  document.getElementById("p-assigned").value = "";
+  document.querySelectorAll(".pill-btn.active").forEach(b => b.classList.remove("active"));
+  renderProspects();
+}
+
 function renderProspects() {
-  const q = (document.getElementById("p-search").value || "").toLowerCase();
+  const q  = (document.getElementById("p-search").value || "").toLowerCase();
   const st = document.getElementById("p-status").value;
-  const pg = document.getElementById("p-program").value;
-  const tm = document.getElementById("p-term").value;
   const ag = document.getElementById("p-assigned").value;
+  const showAll = (st === "__all__"); // special sentinel
 
   const filtered = PROSPECTS_CACHE.filter(p => {
     // Default view hides withdrawn/declined to prevent accidental outreach.
-    // User must explicitly select "Withdrawn" or "Declined" from the status dropdown to see them.
+    // Pick a specific status from the dropdown, OR "Show ALL", to view them.
     if (!st && (p.application_status === "withdrawn" || p.application_status === "declined")) return false;
-    if (st && p.application_status !== st) return false;
-    if (tm && p.potential_entry_term !== tm) return false;
+    if (st && !showAll && p.application_status !== st) return false;
     if (ag && p.assigned_to !== ag) return false;
-    if (pg && !(p.programs_of_interest || []).includes(pg)) return false;
+
+    // Multi-select program (OR logic within the group)
+    if (FILTER_PROGRAMS.size > 0) {
+      const progs = p.programs_of_interest || [];
+      let hit = false;
+      for (const v of FILTER_PROGRAMS) { if (progs.includes(v)) { hit = true; break; } }
+      if (!hit) return false;
+    }
+    // Multi-select year
+    if (FILTER_YEARS.size > 0) {
+      if (!p.potential_entry_year || !FILTER_YEARS.has(String(p.potential_entry_year))) return false;
+    }
+    // Multi-select term
+    if (FILTER_TERMS.size > 0) {
+      if (!p.potential_entry_term || !FILTER_TERMS.has(p.potential_entry_term)) return false;
+    }
+    // Search box
     if (q) {
       const hay = [p.first_name, p.last_name, p.preferred_name, p.email, p.organization, p.cell_phone, p.phone]
         .filter(Boolean).join(" ").toLowerCase();
@@ -195,9 +254,20 @@ function renderProspects() {
     return true;
   });
 
-  // Count of hidden withdrawn/declined in default view, for user awareness
-  const hiddenCount = !st ? PROSPECTS_CACHE.filter(p => p.application_status === "withdrawn" || p.application_status === "declined").length : 0;
+  const hiddenCount = (!st) ? PROSPECTS_CACHE.filter(p => p.application_status === "withdrawn" || p.application_status === "declined").length : 0;
+
+  // Build an "active filters" summary line
+  const activeBits = [];
+  if (FILTER_PROGRAMS.size) activeBits.push(`Programs: ${[...FILTER_PROGRAMS].map(programLabel).join(", ")}`);
+  if (FILTER_YEARS.size)    activeBits.push(`Year${FILTER_YEARS.size>1?"s":""}: ${[...FILTER_YEARS].sort().join(", ")}`);
+  if (FILTER_TERMS.size)    activeBits.push(`Term${FILTER_TERMS.size>1?"s":""}: ${[...FILTER_TERMS].map(termLabel).join(", ")}`);
+  if (st && !showAll)       activeBits.push(`Status: ${st.replace(/_/g," ")}`);
+  if (showAll)              activeBits.push(`Status: ALL`);
+  if (ag)                   activeBits.push(`Assigned: ${ag}`);
+  if (q)                    activeBits.push(`Search: "${q}"`);
+
   const countText = `${filtered.length.toLocaleString()} prospect${filtered.length===1?"":"s"}`
+    + (activeBits.length ? ` · ${activeBits.join(" · ")}` : "")
     + (hiddenCount > 0 ? ` · ${hiddenCount} withdrawn/declined hidden (filter by status to view)` : "");
   document.getElementById("p-count").textContent = countText;
 

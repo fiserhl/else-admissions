@@ -117,6 +117,27 @@
   .toolbar input[type=search], .toolbar input[type=text] { min-width: 220px; max-width: 320px;}
   .toolbar .spacer { flex: 1; }
 
+  /* Filter bar — structured rows with multi-select pills */
+  .filterbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line);}
+  .filter-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;}
+  .filter-row .spacer { flex: 1; }
+  .filter-row input[type=search] { min-width: 240px; max-width: 320px; flex: 0 0 auto;}
+  .filter-row select { max-width: 230px; }
+  .filter-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap;}
+  .filter-label { font-size: 0.78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-right: 4px;}
+  .pill-group { display: flex; gap: 4px; flex-wrap: wrap;}
+  .pill-btn {
+    padding: 4px 11px; font-size: 0.82rem; font-weight: 500;
+    background: #fff; border: 1px solid var(--line); color: var(--ink);
+    border-radius: 14px; cursor: pointer; transition: all 0.12s;
+    font-family: inherit;
+  }
+  .pill-btn:hover { background: #faf5eb; border-color: var(--gold);}
+  .pill-btn.active {
+    background: var(--purple); border-color: var(--purple); color: #fff;
+  }
+  .pill-btn.active:hover { background: var(--purple-dark);}
+
   /* Table */
   table.data { width: 100%; border-collapse: collapse; font-size: 0.92rem;}
   table.data thead th {
@@ -271,44 +292,66 @@
     <!-- PROSPECTS TAB -->
     <div id="tab-prospects" class="tab-panel">
       <div class="panel">
-        <div class="toolbar">
-          <input type="search" id="p-search" placeholder="Search name, email, organization…" oninput="renderProspects()">
-          <select id="p-status" onchange="renderProspects()">
-            <option value="">All statuses</option>
-            <option value="inquiry">Inquiry</option>
-            <option value="in_progress">Application in Progress</option>
-            <option value="submitted">Submitted</option>
-            <option value="complete">Complete</option>
-            <option value="admitted">Admitted</option>
-            <option value="enrolled">Enrolled</option>
-            <option value="declined">Declined</option>
-            <option value="withdrawn">Withdrawn</option>
-          </select>
-          <select id="p-program" onchange="renderProspects()">
-            <option value="">All programs</option>
-            <option value="MBA">MBA</option>
-            <option value="EMBA">EMBA</option>
-            <option value="MBAA">MBAA</option>
-            <option value="MACC">MACC</option>
-            <option value="MACCA">MACCA</option>
-            <option value="data_analytics_cert">Data Analytics Cert</option>
-            <option value="marketing_cert">Marketing Cert</option>
-            <option value="nonprofit_cert">Non-Profit Cert</option>
-          </select>
-          <select id="p-term" onchange="renderProspects()">
-            <option value="">All entry terms</option>
-            <option value="summer">Summer</option>
-            <option value="fall">Fall</option>
-            <option value="spring">Spring</option>
-          </select>
-          <select id="p-assigned" onchange="renderProspects()">
-            <option value="">All assigned</option>
-          </select>
-          <div class="spacer"></div>
-          <button class="btn" onclick="openProspectModal()">+ Add Prospect</button>
-          <button class="btn secondary" onclick="exportProspectsCsv()">Export CSV</button>
+        <!-- Filter bar — multi-select pills for Program, Year, Term; single select for Status & Assigned -->
+        <div class="filterbar">
+          <div class="filter-row">
+            <input type="search" id="p-search" placeholder="🔍 Search name, email, organization…" oninput="renderProspects()">
+            <select id="p-status" onchange="renderProspects()">
+              <option value="">All statuses (active)</option>
+              <option value="inquiry">Inquiry</option>
+              <option value="in_progress">Application in Progress</option>
+              <option value="submitted">Submitted</option>
+              <option value="complete">Complete</option>
+              <option value="admitted">Admitted</option>
+              <option value="enrolled">Enrolled</option>
+              <option value="declined">Declined</option>
+              <option value="withdrawn">Withdrawn</option>
+              <option value="__all__">Show ALL (incl. withdrawn/declined)</option>
+            </select>
+            <select id="p-assigned" onchange="renderProspects()">
+              <option value="">All assigned</option>
+            </select>
+            <button class="btn ghost small" onclick="clearFilters()">✕ Clear filters</button>
+            <div class="spacer"></div>
+            <button class="btn" onclick="openProspectModal()">+ Add Prospect</button>
+            <button class="btn secondary" onclick="exportProspectsCsv()">Export CSV</button>
+          </div>
+
+          <div class="filter-row">
+            <div class="filter-group">
+              <span class="filter-label">Program:</span>
+              <div class="pill-group" id="p-program-pills">
+                <button class="pill-btn" data-val="MBA">MBA</button>
+                <button class="pill-btn" data-val="EMBA">EMBA</button>
+                <button class="pill-btn" data-val="MBAA">MBAA</button>
+                <button class="pill-btn" data-val="MACC">MACC</button>
+                <button class="pill-btn" data-val="MACCA">MACCA</button>
+                <button class="pill-btn" data-val="data_analytics_cert">Data Analytics</button>
+                <button class="pill-btn" data-val="marketing_cert">Marketing</button>
+                <button class="pill-btn" data-val="nonprofit_cert">Non-Profit</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="filter-row">
+            <div class="filter-group">
+              <span class="filter-label">Year:</span>
+              <div class="pill-group" id="p-year-pills">
+                <!-- Populated dynamically from data -->
+              </div>
+            </div>
+            <div class="filter-group">
+              <span class="filter-label">Term:</span>
+              <div class="pill-group" id="p-term-pills">
+                <button class="pill-btn" data-val="spring">Spring</button>
+                <button class="pill-btn" data-val="summer">Summer</button>
+                <button class="pill-btn" data-val="fall">Fall</button>
+              </div>
+            </div>
+          </div>
         </div>
-        <div id="p-count" class="small muted" style="margin-bottom:10px;"></div>
+
+        <div id="p-count" class="small muted" style="margin:6px 0 10px;"></div>
         <div style="overflow-x:auto; max-height: 65vh;">
           <table class="data" id="p-table">
             <thead>
