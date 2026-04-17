@@ -138,6 +138,36 @@
   }
   .pill-btn.active:hover { background: var(--purple-dark);}
 
+  /* Source Event dropdown checklist */
+  .pill-btn.dropdown-toggle { min-width: 140px; text-align: left; }
+  .event-dropdown {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 50;
+    background: #fff; border: 1px solid var(--line); border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    width: 340px; max-width: 90vw;
+  }
+  .event-dropdown-head {
+    display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--line);
+    align-items: center;
+  }
+  .event-dropdown-head input[type=search] { flex: 1; padding: 5px 8px; font-size: 0.85rem; }
+  .event-list {
+    max-height: 280px; overflow-y: auto; padding: 6px 2px;
+  }
+  .event-list label {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 6px 12px; font-size: 0.88rem; cursor: pointer; border-radius: 4px;
+  }
+  .event-list label:hover { background: #faf5eb; }
+  .event-list label input[type=checkbox] { margin: 0; }
+  .event-list .ev-name { flex: 1; }
+  .event-list .ev-count { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums;}
+  .event-dropdown-foot {
+    padding: 8px 12px; border-top: 1px solid var(--line); background: #faf9f6;
+    border-radius: 0 0 6px 6px;
+  }
+  #p-event-count { font-weight: 600; color: var(--purple); }
+
   /* Table */
   table.data { width: 100%; border-collapse: collapse; font-size: 0.92rem;}
   table.data thead th {
@@ -349,6 +379,39 @@
               </div>
             </div>
           </div>
+
+          <div class="filter-row">
+            <div class="filter-group">
+              <span class="filter-label">Source:</span>
+              <div class="pill-group" id="p-source-pills">
+                <button class="pill-btn" data-val="Career Fair">Career Fair</button>
+                <button class="pill-btn" data-val="Employer Event">Employer Event</button>
+                <button class="pill-btn" data-val="Open House">Open House</button>
+                <button class="pill-btn" data-val="Self-Inquiry">Self-Inquiry</button>
+                <button class="pill-btn" data-val="Referral">Referral</button>
+                <button class="pill-btn" data-val="Website">Website</button>
+              </div>
+            </div>
+            <div class="filter-group" style="position:relative;">
+              <span class="filter-label">Source Event:</span>
+              <button type="button" class="pill-btn dropdown-toggle" id="p-event-toggle" onclick="toggleEventDropdown(event)">
+                Any event <span id="p-event-count"></span> ▾
+              </button>
+              <div id="p-event-dropdown" class="event-dropdown hidden">
+                <div class="event-dropdown-head">
+                  <input type="search" id="p-event-search" placeholder="Filter events…" oninput="renderEventList()">
+                  <button class="btn ghost small" type="button" onclick="clearEventFilter()">Clear all</button>
+                </div>
+                <div id="p-event-list" class="event-list"></div>
+                <div class="event-dropdown-foot">
+                  <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem;">
+                    <input type="checkbox" id="p-event-showall" onchange="renderEventList()">
+                    Show all events (not just recent 10)
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div id="p-count" class="small muted" style="margin:6px 0 10px;"></div>
@@ -493,7 +556,21 @@
             <option value="spring">Spring</option>
           </select>
         </div>
-        <div><label>Potential Entry Year</label><input id="f-year" type="number" min="2025" max="2035" placeholder="e.g. 2026"></div>
+        <div><label>Potential Entry Year</label>
+          <select id="f-year">
+            <option value="">— Unknown / Other —</option>
+            <option value="2020">2020</option>
+            <option value="2021">2021</option>
+            <option value="2022">2022</option>
+            <option value="2023">2023</option>
+            <option value="2024">2024</option>
+            <option value="2025">2025</option>
+            <option value="2026">2026</option>
+            <option value="2027">2027</option>
+            <option value="2028">2028</option>
+            <option value="2029">2029</option>
+          </select>
+        </div>
         <div class="col-full">
           <label>Program(s) of Interest</label>
           <div class="chk-group" id="f-programs">

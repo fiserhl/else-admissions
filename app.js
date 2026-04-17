@@ -34,6 +34,9 @@ let ALUMNI_MATCH_CACHE = null;// result from last checkAlumniMatch call
 let FILTER_PROGRAMS = new Set();
 let FILTER_YEARS    = new Set();
 let FILTER_TERMS    = new Set();
+let FILTER_SOURCES  = new Set();  // broad category: Career Fair / Employer Event / Open House / etc.
+let FILTER_EVENTS   = new Set();  // specific event names
+let ALL_EVENTS      = [];         // [{name, n, most_recent_date}, …] loaded from source_events_list view
 
 // --- Boot ---
 document.addEventListener("DOMContentLoaded", () => {
@@ -51,18 +54,29 @@ document.addEventListener("DOMContentLoaded", () => {
   // wire pill-filter clicks (delegated, since year pills are populated later)
   document.addEventListener("click", e => {
     const btn = e.target.closest(".pill-btn");
-    if (!btn) return;
-    const group = btn.closest(".pill-group");
-    if (!group) return;
-    const val = btn.dataset.val;
-    let set;
-    if (group.id === "p-program-pills") set = FILTER_PROGRAMS;
-    else if (group.id === "p-year-pills") set = FILTER_YEARS;
-    else if (group.id === "p-term-pills") set = FILTER_TERMS;
-    else return;
-    if (set.has(val)) set.delete(val); else set.add(val);
-    btn.classList.toggle("active");
-    renderProspects();
+    if (btn) {
+      const group = btn.closest(".pill-group");
+      if (group) {
+        const val = btn.dataset.val;
+        let set;
+        if (group.id === "p-program-pills") set = FILTER_PROGRAMS;
+        else if (group.id === "p-year-pills") set = FILTER_YEARS;
+        else if (group.id === "p-term-pills") set = FILTER_TERMS;
+        else if (group.id === "p-source-pills") set = FILTER_SOURCES;
+        else return;
+        if (set.has(val)) set.delete(val); else set.add(val);
+        btn.classList.toggle("active");
+        renderProspects();
+        return;
+      }
+    }
+    // Close event dropdown if clicking outside it
+    const dropdown = document.getElementById("p-event-dropdown");
+    if (dropdown && !dropdown.classList.contains("hidden")) {
+      if (!e.target.closest("#p-event-dropdown") && !e.target.closest("#p-event-toggle")) {
+        dropdown.classList.add("hidden");
+      }
+    }
   });
   // login on Enter
   document.getElementById("login-pass").addEventListener("keyup", e => {
@@ -129,6 +143,7 @@ function enterApp() {
   document.getElementById("who").textContent = CURRENT_USER.full_name || CURRENT_USER.username;
   refreshDashboard();
   loadProspects();
+  loadSourceEvents();
 }
 
 // =========================================================================
@@ -206,14 +221,97 @@ function populateYearPills() {
   }).join("") || `<span class="tiny muted">No year data yet</span>`;
 }
 
+// ---- Source Event dropdown ----
+async function loadSourceEvents() {
+  try {
+    const { data, error } = await adm.from("source_events_list").select("*");
+    if (error) throw error;
+    ALL_EVENTS = data || [];
+    updateEventButton();
+    renderEventList();
+  } catch (e) {
+    console.error("source events load error:", e);
+  }
+}
+
+function toggleEventDropdown(evt) {
+  if (evt) evt.stopPropagation();
+  const dd = document.getElementById("p-event-dropdown");
+  dd.classList.toggle("hidden");
+  if (!dd.classList.contains("hidden")) renderEventList();
+}
+
+function renderEventList() {
+  const list = document.getElementById("p-event-list");
+  if (!list) return;
+  const query = (document.getElementById("p-event-search")?.value || "").toLowerCase().trim();
+  const showAll = document.getElementById("p-event-showall")?.checked;
+
+  let events = ALL_EVENTS.slice();
+  if (query) events = events.filter(e => e.name.toLowerCase().includes(query));
+  // Default view: top 10 by most_recent_date (list already sorted that way from the view).
+  // Show-all toggle OR a search query disables the 10-cap.
+  if (!showAll && !query) events = events.slice(0, 10);
+
+  if (events.length === 0) {
+    list.innerHTML = `<div class="muted" style="padding:14px; text-align:center; font-size:0.85rem;">No events match.</div>`;
+    return;
+  }
+
+  list.innerHTML = events.map(e => {
+    const checked = FILTER_EVENTS.has(e.name) ? "checked" : "";
+    const safe = escapeHtml(e.name);
+    return `<label>
+      <input type="checkbox" data-ev="${safe}" ${checked} onchange="toggleEvent(this)">
+      <span class="ev-name">${safe}</span>
+      <span class="ev-count">${e.n}</span>
+    </label>`;
+  }).join("");
+}
+
+function toggleEvent(cb) {
+  const name = cb.dataset.ev;
+  if (cb.checked) FILTER_EVENTS.add(name); else FILTER_EVENTS.delete(name);
+  updateEventButton();
+  renderProspects();
+}
+
+function updateEventButton() {
+  const badge = document.getElementById("p-event-count");
+  const toggle = document.getElementById("p-event-toggle");
+  if (!badge || !toggle) return;
+  if (FILTER_EVENTS.size === 0) {
+    badge.textContent = "";
+    toggle.firstChild.nodeValue = "Any event ";
+  } else {
+    badge.textContent = `(${FILTER_EVENTS.size})`;
+    toggle.firstChild.nodeValue = "Filtered ";
+  }
+}
+
+function clearEventFilter() {
+  FILTER_EVENTS.clear();
+  updateEventButton();
+  renderEventList();
+  renderProspects();
+}
+
 function clearFilters() {
   FILTER_PROGRAMS.clear();
   FILTER_YEARS.clear();
   FILTER_TERMS.clear();
+  FILTER_SOURCES.clear();
+  FILTER_EVENTS.clear();
   document.getElementById("p-search").value = "";
   document.getElementById("p-status").value = "";
   document.getElementById("p-assigned").value = "";
+  const search = document.getElementById("p-event-search");
+  if (search) search.value = "";
+  const showAll = document.getElementById("p-event-showall");
+  if (showAll) showAll.checked = false;
   document.querySelectorAll(".pill-btn.active").forEach(b => b.classList.remove("active"));
+  updateEventButton();
+  renderEventList();
   renderProspects();
 }
 
@@ -245,6 +343,14 @@ function renderProspects() {
     if (FILTER_TERMS.size > 0) {
       if (!p.potential_entry_term || !FILTER_TERMS.has(p.potential_entry_term)) return false;
     }
+    // Multi-select broad source (Career Fair, Employer Event, etc.)
+    if (FILTER_SOURCES.size > 0) {
+      if (!p.source_of_contact || !FILTER_SOURCES.has(p.source_of_contact)) return false;
+    }
+    // Multi-select specific event
+    if (FILTER_EVENTS.size > 0) {
+      if (!p.source_event || !FILTER_EVENTS.has(p.source_event)) return false;
+    }
     // Search box
     if (q) {
       const hay = [p.first_name, p.last_name, p.preferred_name, p.email, p.organization, p.cell_phone, p.phone]
@@ -261,6 +367,8 @@ function renderProspects() {
   if (FILTER_PROGRAMS.size) activeBits.push(`Programs: ${[...FILTER_PROGRAMS].map(programLabel).join(", ")}`);
   if (FILTER_YEARS.size)    activeBits.push(`Year${FILTER_YEARS.size>1?"s":""}: ${[...FILTER_YEARS].sort().join(", ")}`);
   if (FILTER_TERMS.size)    activeBits.push(`Term${FILTER_TERMS.size>1?"s":""}: ${[...FILTER_TERMS].map(termLabel).join(", ")}`);
+  if (FILTER_SOURCES.size)  activeBits.push(`Source${FILTER_SOURCES.size>1?"s":""}: ${[...FILTER_SOURCES].join(", ")}`);
+  if (FILTER_EVENTS.size)   activeBits.push(`Event${FILTER_EVENTS.size>1?"s":""}: ${[...FILTER_EVENTS].join(", ")}`);
   if (st && !showAll)       activeBits.push(`Status: ${st.replace(/_/g," ")}`);
   if (showAll)              activeBits.push(`Status: ALL`);
   if (ag)                   activeBits.push(`Assigned: ${ag}`);
@@ -457,6 +565,7 @@ async function saveProspect() {
     toast(EDITING_ID ? "Prospect updated." : "Prospect added.", "success");
     closeProspectModal();
     loadProspects();
+    loadSourceEvents();
     refreshDashboard();
   } catch (e) {
     console.error(e);
