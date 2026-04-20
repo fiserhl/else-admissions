@@ -409,7 +409,8 @@ async function loadProspects() {
     const { data, error } = await adm
       .from("prospects")
       .select("*")
-      .order("created_at", { ascending: false })
+      .order("last_name",  { ascending: true, nullsFirst: false })
+      .order("first_name", { ascending: true, nullsFirst: false })
       .limit(5000);
     if (error) throw error;
     PROSPECTS_CACHE = data || [];
