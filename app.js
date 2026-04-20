@@ -30,6 +30,12 @@ let PROSPECTS_CACHE = [];     // in-memory cache (matches Else CRM pattern)
 let EDITING_ID = null;        // prospect_id being edited, or null for new
 let ALUMNI_MATCH_CACHE = null;// result from last checkAlumniMatch call
 
+// Messaging state (since there's no Twilio/Resend yet — everything handsoff to
+// the OS: mailto: opens the default mail app, sms: opens Apple Messages).
+// After a handoff we prompt the user "did you send it?" and only log on Yes.
+let PENDING_SEND = null;      // { prospect_id, channel, recipient, name, subject, body, bulk, recipients[] }
+let BULK_SELECTION = new Set();// prospect_ids selected in the Messages-tab bulk compose
+
 // Multi-select filter state — each is a Set of selected values. Empty = "all".
 let FILTER_PROGRAMS = new Set();
 let FILTER_YEARS    = new Set();
@@ -95,6 +101,198 @@ function toast(msg, kind="info", ms=3500) {
   wrap.appendChild(el);
   requestAnimationFrame(() => el.classList.add("show"));
   setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 250); }, ms);
+}
+
+// =========================================================================
+// MESSAGING HELPERS — mailto: / sms: handoffs, clipboard, confirm flow
+// =========================================================================
+// No Twilio/Resend yet. These helpers hand off to whatever mail app or
+// Apple Messages install is set as the OS default, then prompt the user
+// "did you send it?" and only log on confirmation. That way the Messages
+// Sent log stays honest (we can't actually verify external app sends).
+
+function openExternal(url) {
+  // Using window.location for mailto:/sms: is the safest cross-browser path —
+  // the browser hands off to the protocol handler without actually navigating.
+  try { window.location.href = url; } catch (e) { console.error("openExternal failed:", e); }
+}
+
+function normalizePhoneForSms(phone) {
+  // US-only for now per Harvey. Returns +1XXXXXXXXXX or null if unparseable.
+  if (!phone) return null;
+  const digits = String(phone).replace(/\D/g, "");
+  if (digits.length === 10) return "+1" + digits;
+  if (digits.length === 11 && digits[0] === "1") return "+" + digits;
+  return null;
+}
+
+async function copyText(text, successMsg) {
+  if (!text) { toast("Nothing to copy.", "error"); return false; }
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      // Fallback for older Safari / non-HTTPS (shouldn't hit this on pages.github.io)
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select(); document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    toast(successMsg || "Copied to clipboard.", "success");
+    return true;
+  } catch (e) {
+    console.error("clipboard error:", e);
+    toast("Couldn't copy — browser blocked clipboard access.", "error");
+    return false;
+  }
+}
+
+// ---- Single prospect launchers ----
+function launchEmail(prospectId) {
+  const p = PROSPECTS_CACHE.find(x => x.prospect_id === prospectId);
+  if (!p) return;
+  if (p.do_not_contact) { toast("This prospect is marked Do Not Contact.", "error"); return; }
+  if (!p.email) { toast("No email address on file.", "error"); return; }
+  openExternal(`mailto:${encodeURIComponent(p.email)}`);
+  setTimeout(() => promptSendConfirmation({
+    prospect_id: p.prospect_id, channel: "email",
+    recipient: p.email, name: displayName(p)
+  }), 600);
+}
+
+function launchSms(prospectId) {
+  const p = PROSPECTS_CACHE.find(x => x.prospect_id === prospectId);
+  if (!p) return;
+  if (p.do_not_contact) { toast("This prospect is marked Do Not Contact.", "error"); return; }
+  const raw = p.cell_phone || p.phone;
+  const num = normalizePhoneForSms(raw);
+  if (!num) { toast("No valid cell phone number on file.", "error"); return; }
+  // sms: works on iOS/macOS. "&body=" is iOS-friendly; use "?body=" for broader compat.
+  openExternal(`sms:${num}`);
+  setTimeout(() => promptSendConfirmation({
+    prospect_id: p.prospect_id, channel: "sms",
+    recipient: num, name: displayName(p)
+  }), 600);
+}
+
+function copyEmailAddress(prospectId) {
+  const p = PROSPECTS_CACHE.find(x => x.prospect_id === prospectId);
+  if (!p || !p.email) { toast("No email to copy.", "error"); return; }
+  copyText(p.email, `Copied ${p.email}`);
+}
+
+function copyPhoneNumber(prospectId) {
+  const p = PROSPECTS_CACHE.find(x => x.prospect_id === prospectId);
+  if (!p) return;
+  const raw = p.cell_phone || p.phone;
+  if (!raw) { toast("No phone number to copy.", "error"); return; }
+  copyText(raw, `Copied ${raw}`);
+}
+
+// ---- "Did you send it?" confirmation modal ----
+function promptSendConfirmation(data) {
+  PENDING_SEND = data;
+  const channelEl = document.getElementById("sc-channel");
+  const nameEl    = document.getElementById("sc-name");
+  const recipEl   = document.getElementById("sc-recipient");
+  const subjEl    = document.getElementById("sc-subject");
+  const titleEl   = document.getElementById("sc-title");
+
+  if (data.bulk) {
+    titleEl.textContent = "Did you send the bulk email?";
+    channelEl.textContent = "email";
+    nameEl.textContent = `${data.count} recipients`;
+    recipEl.textContent = data.recipients.map(r => r.recipient).slice(0,3).join(", ")
+      + (data.count > 3 ? ` + ${data.count - 3} more` : "");
+  } else {
+    titleEl.textContent = "Did you send it?";
+    channelEl.textContent = data.channel === "email" ? "email" : "text message";
+    nameEl.textContent = data.name || "this prospect";
+    recipEl.textContent = data.recipient || "";
+  }
+  subjEl.value = "";
+  // For SMS, hide the subject field — no subject on a text.
+  subjEl.parentElement.style.display = (data.channel === "sms" && !data.bulk) ? "none" : "";
+  document.getElementById("send-confirm-modal").classList.add("show");
+}
+
+function dismissSendConfirm() {
+  PENDING_SEND = null;
+  document.getElementById("send-confirm-modal").classList.remove("show");
+}
+
+async function confirmSent() {
+  if (!PENDING_SEND) { dismissSendConfirm(); return; }
+  const subject = document.getElementById("sc-subject").value.trim() || null;
+  const pd = PENDING_SEND;
+  const today = new Date().toISOString().slice(0,10);
+
+  try {
+    if (pd.bulk) {
+      // One row per recipient — keeps the Messages tab and per-prospect history clean
+      const rows = pd.recipients.map(r => ({
+        prospect_id: r.prospect_id,
+        channel: "email",
+        direction: "outbound",
+        recipient: r.recipient,
+        subject: subject,
+        body: null,
+        sent_by: CURRENT_USER.username,
+        status: "sent"
+      }));
+      // Chunk at 40 (matches the general bulk-insert convention on this project)
+      for (let i = 0; i < rows.length; i += 40) {
+        const chunk = rows.slice(i, i + 40);
+        const { error } = await adm.from("platform_messages").insert(chunk);
+        if (error) throw error;
+      }
+      // Update last_contact_date on each prospect
+      const ids = pd.recipients.map(r => r.prospect_id).filter(Boolean);
+      if (ids.length > 0) {
+        await adm.from("prospects").update({ last_contact_date: today }).in("prospect_id", ids);
+      }
+      // Per-prospect history rows
+      for (const r of pd.recipients) {
+        if (r.prospect_id) {
+          await logHistory(r.prospect_id, "contacted",
+            `Bulk email sent to ${r.recipient}${subject ? ": " + subject : ""}`,
+            "mailto bulk handoff");
+        }
+      }
+      logAudit("bulk_email_sent", `Logged bulk email to ${pd.count} recipients${subject ? ": " + subject : ""}`);
+      toast(`Logged ${pd.count} sends.`, "success");
+    } else {
+      const payload = {
+        prospect_id: pd.prospect_id,
+        channel: pd.channel,
+        direction: "outbound",
+        recipient: pd.recipient,
+        subject: subject,
+        body: null,
+        sent_by: CURRENT_USER.username,
+        status: "sent"
+      };
+      const { error } = await adm.from("platform_messages").insert(payload);
+      if (error) throw error;
+      if (pd.prospect_id) {
+        await adm.from("prospects").update({ last_contact_date: today }).eq("prospect_id", pd.prospect_id);
+        await logHistory(pd.prospect_id, "contacted",
+          `${pd.channel === "email" ? "Email" : "Text"} sent to ${pd.recipient}${subject ? ": " + subject : ""}`,
+          pd.channel === "email" ? "mailto handoff" : "sms handoff");
+      }
+      toast("Logged as sent.", "success");
+    }
+    dismissSendConfirm();
+    // refresh any visible views that depend on this data
+    loadProspects();
+    refreshDashboard();
+    if (!document.getElementById("tab-messages").classList.contains("hidden")) {
+      loadMessages();
+    }
+  } catch (e) {
+    console.error(e);
+    toast("Error logging: " + (e.message || "unknown"), "error");
+  }
 }
 
 // =========================================================================
@@ -173,7 +371,7 @@ function switchTab(tab) {
   document.querySelectorAll(".tab-panel").forEach(p => p.classList.add("hidden"));
   document.getElementById("tab-" + tab).classList.remove("hidden");
 
-  if (tab === "messages")  loadMessages();
+  if (tab === "messages")  { loadMessages(); renderBulkRecipients(); }
   if (tab === "audit")     loadAudit();
   if (tab === "research")  loadEnrichmentQueue();
 }
@@ -401,11 +599,30 @@ function renderProspects() {
     const programs = (p.programs_of_interest || []).map(x => programLabel(x)).join(", ") || "<span class='muted'>—</span>";
     const alumPill = p.is_alum ? ` <span class="pill alum">Alum</span>` : "";
     const dncPill  = p.do_not_contact ? ` <span class="pill declined" title="${escapeHtml(p.dnc_reason||'')}">🚫 DNC</span>` : "";
+
+    // Inline compose actions — hidden entirely for DNC prospects so they can't be contacted by accident
+    const phoneDisplay = p.cell_phone || p.phone || "";
+    const hasSmsPhone  = !!normalizePhoneForSms(p.cell_phone || p.phone);
+    let emailActions = "";
+    let phoneActions = "";
+    if (!p.do_not_contact) {
+      if (p.email) {
+        emailActions = `
+          <button class="act-btn" title="Email this prospect" onclick="event.stopPropagation(); launchEmail(${p.prospect_id})">✉</button>
+          <button class="act-btn copy" title="Copy email address" onclick="event.stopPropagation(); copyEmailAddress(${p.prospect_id})">📋</button>`;
+      }
+      if (phoneDisplay) {
+        phoneActions = `
+          ${hasSmsPhone ? `<button class="act-btn" title="Text this prospect (Apple Messages)" onclick="event.stopPropagation(); launchSms(${p.prospect_id})">💬</button>` : `<button class="act-btn" title="Phone number can't be sent via SMS" disabled>💬</button>`}
+          <button class="act-btn copy" title="Copy phone number" onclick="event.stopPropagation(); copyPhoneNumber(${p.prospect_id})">📋</button>`;
+      }
+    }
+
     return `
       <tr onclick="openProspectModal(${p.prospect_id})">
         <td><strong>${escapeHtml(name)}</strong>${alumPill}${dncPill}</td>
-        <td>${escapeHtml(p.email||"")}</td>
-        <td>${escapeHtml(p.cell_phone||p.phone||"")}</td>
+        <td>${escapeHtml(p.email||"")}${emailActions}</td>
+        <td>${escapeHtml(phoneDisplay)}${phoneActions}</td>
         <td class="small">${programs}</td>
         <td>${p.potential_entry_year||""} ${termLabel(p.potential_entry_term)}</td>
         <td><span class="pill ${p.application_status||'inquiry'}">${(p.application_status||'inquiry').replace(/_/g,' ')}</span></td>
@@ -454,6 +671,10 @@ function openProspectModal(id) {
   document.getElementById("prospect-modal-title").textContent = id ? "Edit Prospect" : "Add Prospect";
   document.getElementById("btn-delete").style.display = id ? "inline-flex" : "none";
 
+  // clear modal compose action slots (populated below for saved prospects)
+  document.getElementById("modal-email-actions").innerHTML = "";
+  document.getElementById("modal-cell-actions").innerHTML = "";
+
   // clear form
   ["f-first","f-last","f-pref","f-email","f-cell","f-phone","f-linkedin",
    "f-source","f-firstdate","f-term","f-year","f-appstatus","f-assigned","f-notes",
@@ -499,9 +720,49 @@ function openProspectModal(id) {
         document.getElementById("f-org").value      = p.organization || "";
         document.getElementById("f-title").value    = p.title || "";
       }
+      renderModalComposeActions(p);
     }
   }
   document.getElementById("prospect-modal").classList.add("show");
+}
+
+// Populate the Email/SMS/Copy buttons inside the modal. Shows a DNC notice
+// for prospects flagged Do-Not-Contact instead of the action buttons.
+function renderModalComposeActions(p) {
+  const emailSlot = document.getElementById("modal-email-actions");
+  const cellSlot  = document.getElementById("modal-cell-actions");
+  if (!emailSlot || !cellSlot) return;
+
+  if (p.do_not_contact) {
+    const reason = p.dnc_reason ? ` — ${escapeHtml(p.dnc_reason)}` : "";
+    const dated = p.dnc_date ? ` (${formatDate(p.dnc_date)})` : "";
+    const notice = `<div class="dnc-notice">🚫 Do Not Contact${dated}
+      <div class="meta">All outreach is blocked for this prospect${reason}</div>
+    </div>`;
+    emailSlot.innerHTML = notice;
+    cellSlot.innerHTML = "";
+    return;
+  }
+
+  if (p.email) {
+    emailSlot.innerHTML = `
+      <button class="btn small" type="button" onclick="launchEmail(${p.prospect_id})">✉ Email</button>
+      <button class="btn small secondary" type="button" onclick="copyEmailAddress(${p.prospect_id})">📋 Copy address</button>`;
+  } else {
+    emailSlot.innerHTML = `<span class="small muted">Save an email address to enable compose.</span>`;
+  }
+
+  const num = normalizePhoneForSms(p.cell_phone || p.phone);
+  if (num) {
+    cellSlot.innerHTML = `
+      <button class="btn small" type="button" onclick="launchSms(${p.prospect_id})">💬 Text (Apple Messages)</button>
+      <button class="btn small secondary" type="button" onclick="copyPhoneNumber(${p.prospect_id})">📋 Copy number</button>`;
+  } else if (p.cell_phone || p.phone) {
+    cellSlot.innerHTML = `<span class="small muted">Phone number doesn't look like a US cell — only copy is available.</span>
+      <button class="btn small secondary" type="button" onclick="copyPhoneNumber(${p.prospect_id})">📋 Copy number</button>`;
+  } else {
+    cellSlot.innerHTML = "";
+  }
 }
 function closeProspectModal() {
   document.getElementById("prospect-modal").classList.remove("show");
@@ -983,6 +1244,151 @@ async function loadEnrichmentQueue() {
   } catch (e) {
     root.innerHTML = `<p class="muted">Error: ${escapeHtml(e.message)}</p>`;
   }
+}
+
+// =========================================================================
+// BULK COMPOSE (Messages tab)
+// =========================================================================
+// Lets Harvey pick a bunch of prospects and hand off a single mailto: with
+// all selected emails in BCC, or copy emails/phones to the clipboard for
+// pasting into another tool. DNC prospects are filtered out everywhere here.
+
+function renderBulkRecipients() {
+  const list = document.getElementById("bc-list");
+  if (!list) return;
+  if (PROSPECTS_CACHE.length === 0) {
+    list.innerHTML = `<div class="muted" style="padding:20px; text-align:center; font-size:0.88rem;">No prospects loaded yet.</div>`;
+    updateBulkCount();
+    return;
+  }
+
+  const q  = (document.getElementById("bc-search")?.value || "").toLowerCase().trim();
+  const st = document.getElementById("bc-status")?.value || "";
+
+  // Default: active pipeline only — no withdrawn, declined, or DNC
+  const eligible = PROSPECTS_CACHE.filter(p => {
+    if (p.do_not_contact) return false;
+    if (p.application_status === "withdrawn" || p.application_status === "declined") return false;
+    if (st && p.application_status !== st) return false;
+    if (q) {
+      const hay = [p.first_name, p.last_name, p.preferred_name, p.email, p.organization, p.cell_phone, p.phone]
+        .filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  if (eligible.length === 0) {
+    list.innerHTML = `<div class="muted" style="padding:20px; text-align:center; font-size:0.88rem;">No eligible prospects match.</div>`;
+    updateBulkCount();
+    return;
+  }
+
+  list.innerHTML = eligible.map(p => {
+    const checked = BULK_SELECTION.has(p.prospect_id) ? "checked" : "";
+    const name = escapeHtml(displayName(p));
+    const status = p.application_status || "inquiry";
+    const email = p.email ? escapeHtml(p.email) : `<span class="br-missing">no email</span>`;
+    const phone = (p.cell_phone || p.phone) ? escapeHtml(p.cell_phone || p.phone) : `<span class="br-missing">no phone</span>`;
+    return `<label>
+      <input type="checkbox" data-pid="${p.prospect_id}" ${checked} onchange="toggleBulkRecipient(this)">
+      <span class="br-name">${name}</span>
+      <span class="br-contact">${email}</span>
+      <span class="br-contact">${phone}</span>
+      <span class="br-status"><span class="pill ${status}">${status.replace(/_/g," ")}</span></span>
+    </label>`;
+  }).join("");
+
+  // Sync "select all visible" checkbox state — checked only if every visible row is in the selection
+  const selectAll = document.getElementById("bc-selectall");
+  if (selectAll) {
+    const allChecked = eligible.length > 0 && eligible.every(p => BULK_SELECTION.has(p.prospect_id));
+    selectAll.checked = allChecked;
+  }
+
+  updateBulkCount();
+}
+
+function toggleBulkRecipient(cb) {
+  const pid = parseInt(cb.dataset.pid);
+  if (cb.checked) BULK_SELECTION.add(pid); else BULK_SELECTION.delete(pid);
+  updateBulkCount();
+  // keep "select all visible" in sync
+  const selectAll = document.getElementById("bc-selectall");
+  if (selectAll) {
+    const visible = [...document.querySelectorAll("#bc-list input[type=checkbox][data-pid]")];
+    selectAll.checked = visible.length > 0 && visible.every(x => x.checked);
+  }
+}
+
+function toggleAllBulkRecipients(on) {
+  document.querySelectorAll("#bc-list input[type=checkbox][data-pid]").forEach(cb => {
+    const pid = parseInt(cb.dataset.pid);
+    cb.checked = on;
+    if (on) BULK_SELECTION.add(pid); else BULK_SELECTION.delete(pid);
+  });
+  updateBulkCount();
+}
+
+function clearBulkSelection() {
+  BULK_SELECTION.clear();
+  document.querySelectorAll("#bc-list input[type=checkbox][data-pid]").forEach(cb => cb.checked = false);
+  const selectAll = document.getElementById("bc-selectall");
+  if (selectAll) selectAll.checked = false;
+  updateBulkCount();
+}
+
+function updateBulkCount() {
+  const el = document.getElementById("bc-count");
+  if (el) el.textContent = `${BULK_SELECTION.size} selected`;
+}
+
+// Pull the currently-selected prospects, re-filtering out any DNC (defense
+// in depth — DNC can change between render and action).
+function getBulkSelectedProspects() {
+  return PROSPECTS_CACHE.filter(p =>
+    BULK_SELECTION.has(p.prospect_id) && !p.do_not_contact
+  );
+}
+
+function bulkLaunchEmail() {
+  const selected = getBulkSelectedProspects();
+  const withEmail = selected.filter(p => p.email);
+  if (withEmail.length === 0) {
+    toast("No selected prospects have an email on file.", "error");
+    return;
+  }
+  // Dedup emails (case-insensitive)
+  const uniq = [...new Map(withEmail.map(p => [p.email.toLowerCase(), p])).values()];
+  const bcc  = uniq.map(p => p.email).join(",");
+  const skipped = selected.length - uniq.length;
+
+  openExternal(`mailto:?bcc=${encodeURIComponent(bcc)}`);
+
+  setTimeout(() => promptSendConfirmation({
+    bulk: true,
+    channel: "email",
+    count: uniq.length,
+    recipients: uniq.map(p => ({ prospect_id: p.prospect_id, recipient: p.email }))
+  }), 600);
+
+  if (skipped > 0) {
+    toast(`${uniq.length} in BCC. ${skipped} skipped (missing email or duplicate).`, "info");
+  }
+}
+
+function bulkCopyEmails() {
+  const selected = getBulkSelectedProspects();
+  const emails = [...new Set(selected.map(p => p.email).filter(Boolean))];
+  if (emails.length === 0) { toast("No email addresses to copy.", "error"); return; }
+  copyText(emails.join(", "), `Copied ${emails.length} email address${emails.length===1?"":"es"}.`);
+}
+
+function bulkCopyPhones() {
+  const selected = getBulkSelectedProspects();
+  const phones = [...new Set(selected.map(p => p.cell_phone || p.phone).filter(Boolean))];
+  if (phones.length === 0) { toast("No phone numbers to copy.", "error"); return; }
+  copyText(phones.join(", "), `Copied ${phones.length} phone number${phones.length===1?"":"s"}.`);
 }
 
 // =========================================================================

@@ -252,12 +252,77 @@
   .loader { display:inline-block; width:14px; height:14px; border:2px solid #ddd; border-top-color:var(--purple); border-radius:50%; animation: spin 0.8s linear infinite;}
   @keyframes spin { to { transform: rotate(360deg);} }
 
+  /* Inline compose action buttons (in prospect rows & modal) */
+  .act-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px;
+    padding: 0; margin-left: 4px;
+    background: #fff; border: 1px solid var(--line); color: var(--purple);
+    border-radius: 4px; cursor: pointer; font-size: 0.9rem;
+    font-family: inherit; line-height: 1; vertical-align: middle;
+    transition: all 0.12s;
+  }
+  .act-btn:hover { background: var(--purple); color: #fff; border-color: var(--purple);}
+  .act-btn.copy:hover { background: var(--gold); color: #fff; border-color: var(--gold);}
+  .act-btn[disabled] { opacity: 0.3; cursor: not-allowed;}
+  .act-btn[disabled]:hover { background: #fff; color: var(--purple); border-color: var(--line);}
+
+  /* Modal inline compose row — same buttons but labeled */
+  .compose-row {
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .compose-row .btn.small { padding: 4px 10px; font-size: 0.8rem;}
+
+  /* DNC notice (shown in modal instead of compose buttons) */
+  .dnc-notice {
+    background: #fef2f2; border: 1px solid #fecaca; border-left: 4px solid var(--danger);
+    padding: 10px 14px; border-radius: 4px; margin: 6px 0;
+    color: var(--danger); font-size: 0.88rem; font-weight: 500;
+  }
+  .dnc-notice .meta { color: var(--muted); font-weight: 400; font-size: 0.82rem; margin-top: 3px;}
+
+  /* Bulk compose section in Messages tab */
+  .bulk-compose {
+    background: #faf9f6; border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 18px; margin-bottom: 20px;
+  }
+  .bulk-compose h3 { color: var(--purple); margin-top: 0;}
+  .bulk-compose .bulk-controls {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .bulk-compose .bulk-controls input[type=search] { min-width: 240px; flex: 1; max-width: 320px;}
+  .bulk-recipient-list {
+    max-height: 280px; overflow-y: auto; background: #fff;
+    border: 1px solid var(--line); border-radius: 4px;
+    padding: 4px 0;
+  }
+  .bulk-recipient-list label {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 12px; font-size: 0.88rem; cursor: pointer;
+    border-bottom: 1px solid #f5f5f5;
+  }
+  .bulk-recipient-list label:hover { background: #faf7f1;}
+  .bulk-recipient-list label:last-child { border-bottom: none;}
+  .bulk-recipient-list label input[type=checkbox] { margin: 0; flex: 0 0 auto;}
+  .bulk-recipient-list .br-name { flex: 1; font-weight: 500;}
+  .bulk-recipient-list .br-contact { color: var(--muted); font-size: 0.82rem; flex: 0 0 auto;}
+  .bulk-recipient-list .br-status { flex: 0 0 auto;}
+  .bulk-recipient-list .br-missing { color: #b45309; font-style: italic; font-size: 0.8rem;}
+  .bulk-count-badge {
+    padding: 4px 10px; background: var(--purple); color: #fff;
+    border-radius: 12px; font-size: 0.82rem; font-weight: 500;
+  }
+  .bulk-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;}
+
   @media (max-width: 720px) {
     .grid { grid-template-columns: 1fr;}
     .main { padding: 14px;}
     .topbar { padding: 10px 14px;}
     table.data { font-size: 0.82rem;}
     table.data thead th, table.data tbody td { padding: 7px 5px;}
+    .act-btn { width: 30px; height: 30px;}
   }
 </style>
 </head>
@@ -476,9 +541,46 @@
 
     <!-- MESSAGES TAB -->
     <div id="tab-messages" class="tab-panel hidden">
+      <!-- Bulk compose section -->
+      <div class="bulk-compose">
+        <h3>Compose to Multiple Recipients</h3>
+        <p class="small muted" style="margin-top:-4px;">Select prospects, then open your default mail app (BCC), copy email addresses, or copy phone numbers. Do-Not-Contact prospects are excluded automatically.</p>
+
+        <div class="bulk-controls">
+          <input type="search" id="bc-search" placeholder="🔍 Filter name, email, organization…" oninput="renderBulkRecipients()">
+          <select id="bc-status" onchange="renderBulkRecipients()">
+            <option value="">All active statuses</option>
+            <option value="inquiry">Inquiry</option>
+            <option value="in_progress">In Progress</option>
+            <option value="submitted">Submitted</option>
+            <option value="complete">Complete</option>
+            <option value="admitted">Admitted</option>
+            <option value="enrolled">Enrolled</option>
+          </select>
+          <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem;">
+            <input type="checkbox" id="bc-selectall" onchange="toggleAllBulkRecipients(this.checked)">
+            Select all visible
+          </label>
+          <div class="spacer" style="flex:1;"></div>
+          <span class="bulk-count-badge" id="bc-count">0 selected</span>
+        </div>
+
+        <div class="bulk-recipient-list" id="bc-list">
+          <div class="muted" style="padding:20px; text-align:center; font-size:0.88rem;">Loading prospects…</div>
+        </div>
+
+        <div class="bulk-actions">
+          <button class="btn" onclick="bulkLaunchEmail()">✉ Open Email (BCC to selected)</button>
+          <button class="btn secondary" onclick="bulkCopyEmails()">📋 Copy Email Addresses</button>
+          <button class="btn secondary" onclick="bulkCopyPhones()">📋 Copy Phone Numbers</button>
+          <button class="btn ghost" onclick="clearBulkSelection()">Clear selection</button>
+        </div>
+        <p class="tiny muted" style="margin-top:10px;">Note: mailto: opens your default mail app. For bulk SMS, copy the phone numbers — Apple Messages handles comma-separated recipients inconsistently and often creates a group chat.</p>
+      </div>
+
       <div class="panel">
         <h2>Messages Sent</h2>
-        <p class="muted small">All emails and text messages sent from this platform. The monthly counter resets on the 1st of each month (Central time).</p>
+        <p class="muted small">All emails and text messages logged from this platform. Logged when you confirm you sent a message after the compose window opens.</p>
         <div style="overflow-x:auto; max-height:60vh;">
           <table class="data" id="msg-table">
             <thead>
@@ -530,9 +632,20 @@
 
       <div class="section-head">Contact</div>
       <div class="grid">
-        <div class="col-full"><label>Email</label><input id="f-email" type="email"></div>
-        <div><label>Phone (Cell)</label><input id="f-cell" type="tel"></div>
-        <div><label>Phone (Business)</label><input id="f-phone" type="tel"></div>
+        <div class="col-full">
+          <label>Email</label>
+          <input id="f-email" type="email">
+          <div class="compose-row" id="modal-email-actions"></div>
+        </div>
+        <div>
+          <label>Phone (Cell)</label>
+          <input id="f-cell" type="tel">
+          <div class="compose-row" id="modal-cell-actions"></div>
+        </div>
+        <div>
+          <label>Phone (Business)</label>
+          <input id="f-phone" type="tel">
+        </div>
         <div class="col-full"><label>LinkedIn URL</label><input id="f-linkedin" type="url" placeholder="https://linkedin.com/in/..."></div>
       </div>
 
@@ -673,6 +786,29 @@
     <footer>
       <button class="btn ghost" onclick="closePasswordModal()">Close</button>
       <button class="btn" onclick="changePassword()">Update Password</button>
+    </footer>
+  </div>
+</div>
+
+<!-- SEND CONFIRMATION MODAL -->
+<div class="modal-backdrop" id="send-confirm-modal">
+  <div class="modal" style="max-width:440px;">
+    <header>
+      <h2 id="sc-title">Did you send it?</h2>
+      <button class="close" onclick="dismissSendConfirm()">×</button>
+    </header>
+    <div class="body">
+      <p style="margin-top:0;">Did you send the <strong id="sc-channel"></strong> to <strong id="sc-name"></strong>?</p>
+      <p class="small muted mono" id="sc-recipient" style="margin:6px 0 14px;"></p>
+      <div>
+        <label class="small muted">Subject / note (optional — saved with this log)</label>
+        <input id="sc-subject" type="text" placeholder="e.g. Application follow-up">
+      </div>
+      <p class="tiny muted" style="margin-top:12px;">Click "Yes, log it" once you've actually sent from your mail/messages app. Click "No" if you didn't send (nothing will be logged).</p>
+    </div>
+    <footer>
+      <button class="btn ghost" onclick="dismissSendConfirm()">No, didn't send</button>
+      <button class="btn" onclick="confirmSent()">Yes, log it as sent</button>
     </footer>
   </div>
 </div>
