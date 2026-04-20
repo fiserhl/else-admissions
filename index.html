@@ -544,24 +544,105 @@
       <!-- Bulk compose section -->
       <div class="bulk-compose">
         <h3>Compose to Multiple Recipients</h3>
-        <p class="small muted" style="margin-top:-4px;">Select prospects, then open your default mail app (BCC), copy email addresses, or copy phone numbers. Do-Not-Contact prospects are excluded automatically.</p>
+        <p class="small muted" style="margin-top:-4px;">Filter the prospect list, select who you want to reach, then open your default mail app (BCC), copy email addresses, or copy phone numbers. Do-Not-Contact prospects are excluded automatically and can never be selected here, regardless of the filter settings.</p>
 
-        <div class="bulk-controls">
-          <input type="search" id="bc-search" placeholder="🔍 Filter name, email, organization…" oninput="renderBulkRecipients()">
-          <select id="bc-status" onchange="renderBulkRecipients()">
-            <option value="">All active statuses</option>
-            <option value="inquiry">Inquiry</option>
-            <option value="in_progress">In Progress</option>
-            <option value="submitted">Submitted</option>
-            <option value="complete">Complete</option>
-            <option value="admitted">Admitted</option>
-            <option value="enrolled">Enrolled</option>
-          </select>
+        <!-- Filter bar — mirrors the Prospects tab one-for-one -->
+        <div class="filterbar">
+          <div class="filter-row">
+            <input type="search" id="bc-search" placeholder="🔍 Search name, email, organization…" oninput="renderBulkRecipients()">
+            <select id="bc-status" onchange="renderBulkRecipients()">
+              <option value="">All statuses (active)</option>
+              <option value="inquiry">Inquiry</option>
+              <option value="in_progress">Application in Progress</option>
+              <option value="submitted">Submitted</option>
+              <option value="complete">Complete</option>
+              <option value="admitted">Admitted</option>
+              <option value="enrolled">Enrolled</option>
+              <option value="declined">Declined</option>
+              <option value="withdrawn">Withdrawn</option>
+              <option value="__all__">Show ALL (incl. withdrawn/declined)</option>
+            </select>
+            <select id="bc-assigned" onchange="renderBulkRecipients()">
+              <option value="">All assigned</option>
+            </select>
+            <button class="btn ghost small" onclick="clearBulkFilters()">✕ Clear filters</button>
+          </div>
+
+          <div class="filter-row">
+            <div class="filter-group">
+              <span class="filter-label">Program:</span>
+              <div class="pill-group" id="bc-program-pills">
+                <button class="pill-btn" data-val="MBA">MBA</button>
+                <button class="pill-btn" data-val="EMBA">EMBA</button>
+                <button class="pill-btn" data-val="MBAA">MBAA</button>
+                <button class="pill-btn" data-val="MACC">MACC</button>
+                <button class="pill-btn" data-val="MACCA">MACCA</button>
+                <button class="pill-btn" data-val="data_analytics_cert">Data Analytics</button>
+                <button class="pill-btn" data-val="marketing_cert">Marketing</button>
+                <button class="pill-btn" data-val="nonprofit_cert">Non-Profit</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="filter-row">
+            <div class="filter-group">
+              <span class="filter-label">Year:</span>
+              <div class="pill-group" id="bc-year-pills">
+                <!-- Populated dynamically from data -->
+              </div>
+            </div>
+            <div class="filter-group">
+              <span class="filter-label">Term:</span>
+              <div class="pill-group" id="bc-term-pills">
+                <button class="pill-btn" data-val="spring">Spring</button>
+                <button class="pill-btn" data-val="summer">Summer</button>
+                <button class="pill-btn" data-val="fall">Fall</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="filter-row">
+            <div class="filter-group">
+              <span class="filter-label">Source:</span>
+              <div class="pill-group" id="bc-source-pills">
+                <button class="pill-btn" data-val="Career Fair">Career Fair</button>
+                <button class="pill-btn" data-val="Employer Event">Employer Event</button>
+                <button class="pill-btn" data-val="Open House">Open House</button>
+                <button class="pill-btn" data-val="Self-Inquiry">Self-Inquiry</button>
+                <button class="pill-btn" data-val="Referral">Referral</button>
+                <button class="pill-btn" data-val="Website">Website</button>
+              </div>
+            </div>
+            <div class="filter-group" style="position:relative;">
+              <span class="filter-label">Source Event:</span>
+              <button type="button" class="pill-btn dropdown-toggle" id="bc-event-toggle" onclick="toggleBcEventDropdown(event)">
+                <span id="bc-event-label">Any event</span><span id="bc-event-count"></span> <span aria-hidden="true">▾</span>
+              </button>
+              <div id="bc-event-dropdown" class="event-dropdown hidden">
+                <div class="event-dropdown-head">
+                  <input type="search" id="bc-event-search" placeholder="Filter events…" oninput="renderBcEventList()">
+                  <button class="btn ghost small" type="button" onclick="clearBcEventFilter()">Clear all</button>
+                </div>
+                <div id="bc-event-list" class="event-list"></div>
+                <div class="event-dropdown-foot">
+                  <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem;">
+                    <input type="checkbox" id="bc-event-showall" onchange="renderBcEventList()">
+                    Show all events (not just recent 10)
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Select-all + count sit just above the list for visibility -->
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
           <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem;">
             <input type="checkbox" id="bc-selectall" onchange="toggleAllBulkRecipients(this.checked)">
             Select all visible
           </label>
           <div class="spacer" style="flex:1;"></div>
+          <span class="small muted" id="bc-visible-count"></span>
           <span class="bulk-count-badge" id="bc-count">0 selected</span>
         </div>
 

@@ -44,6 +44,15 @@ let FILTER_SOURCES  = new Set();  // broad category: Career Fair / Employer Even
 let FILTER_EVENTS   = new Set();  // specific event names
 let ALL_EVENTS      = [];         // [{name, n, most_recent_date}, …] loaded from source_events_list view
 
+// Parallel filter state for the Messages-tab bulk compose section.
+// Kept independent from the Prospects-tab filters so filtering in one place
+// doesn't silently change what's visible in the other.
+let FILTER_BC_PROGRAMS = new Set();
+let FILTER_BC_YEARS    = new Set();
+let FILTER_BC_TERMS    = new Set();
+let FILTER_BC_SOURCES  = new Set();
+let FILTER_BC_EVENTS   = new Set();
+
 // --- Boot ---
 document.addEventListener("DOMContentLoaded", () => {
   const saved = sessionStorage.getItem("adm_user");
@@ -57,30 +66,44 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".tabs .tab").forEach(t => {
     t.addEventListener("click", () => switchTab(t.dataset.tab));
   });
-  // wire pill-filter clicks (delegated, since year pills are populated later)
+  // wire pill-filter clicks (delegated, since year pills are populated later).
+  // Same handler services both the Prospects tab (p-*) and the Messages-tab
+  // bulk compose (bc-*) pill groups — which set gets mutated is determined
+  // by the containing pill-group's id.
   document.addEventListener("click", e => {
     const btn = e.target.closest(".pill-btn");
     if (btn) {
       const group = btn.closest(".pill-group");
       if (group) {
         const val = btn.dataset.val;
-        let set;
-        if (group.id === "p-program-pills") set = FILTER_PROGRAMS;
-        else if (group.id === "p-year-pills") set = FILTER_YEARS;
-        else if (group.id === "p-term-pills") set = FILTER_TERMS;
-        else if (group.id === "p-source-pills") set = FILTER_SOURCES;
+        let set, rerender;
+        if (group.id === "p-program-pills")        { set = FILTER_PROGRAMS;    rerender = renderProspects; }
+        else if (group.id === "p-year-pills")      { set = FILTER_YEARS;       rerender = renderProspects; }
+        else if (group.id === "p-term-pills")      { set = FILTER_TERMS;       rerender = renderProspects; }
+        else if (group.id === "p-source-pills")    { set = FILTER_SOURCES;     rerender = renderProspects; }
+        else if (group.id === "bc-program-pills")  { set = FILTER_BC_PROGRAMS; rerender = renderBulkRecipients; }
+        else if (group.id === "bc-year-pills")     { set = FILTER_BC_YEARS;    rerender = renderBulkRecipients; }
+        else if (group.id === "bc-term-pills")     { set = FILTER_BC_TERMS;    rerender = renderBulkRecipients; }
+        else if (group.id === "bc-source-pills")   { set = FILTER_BC_SOURCES;  rerender = renderBulkRecipients; }
         else return;
         if (set.has(val)) set.delete(val); else set.add(val);
         btn.classList.toggle("active");
-        renderProspects();
+        rerender();
         return;
       }
     }
-    // Close event dropdown if clicking outside it
-    const dropdown = document.getElementById("p-event-dropdown");
-    if (dropdown && !dropdown.classList.contains("hidden")) {
+    // Close the Prospects-tab event dropdown if clicking outside it
+    const pDropdown = document.getElementById("p-event-dropdown");
+    if (pDropdown && !pDropdown.classList.contains("hidden")) {
       if (!e.target.closest("#p-event-dropdown") && !e.target.closest("#p-event-toggle")) {
-        dropdown.classList.add("hidden");
+        pDropdown.classList.add("hidden");
+      }
+    }
+    // Same for the Messages-tab event dropdown
+    const bcDropdown = document.getElementById("bc-event-dropdown");
+    if (bcDropdown && !bcDropdown.classList.contains("hidden")) {
+      if (!e.target.closest("#bc-event-dropdown") && !e.target.closest("#bc-event-toggle")) {
+        bcDropdown.classList.add("hidden");
       }
     }
   });
@@ -391,8 +414,11 @@ async function loadProspects() {
     if (error) throw error;
     PROSPECTS_CACHE = data || [];
     populateAssignedFilter();
+    populateBcAssignedFilter();
     populateYearPills();
+    populateBcYearPills();
     renderProspects();
+    renderBulkRecipients();
   } catch (e) {
     console.error(e);
     tbody.innerHTML = `<tr><td colspan="8" class="muted center">Error loading prospects: ${e.message}</td></tr>`;
@@ -438,6 +464,7 @@ async function loadSourceEvents() {
     if (error) throw error;
     ALL_EVENTS = data || [];
     updateEventButton();
+    updateBcEventButton();
     renderEventList();
   } catch (e) {
     console.error("source events load error:", e);
@@ -1252,24 +1279,170 @@ async function loadEnrichmentQueue() {
 // Lets Harvey pick a bunch of prospects and hand off a single mailto: with
 // all selected emails in BCC, or copy emails/phones to the clipboard for
 // pasting into another tool. DNC prospects are filtered out everywhere here.
+// Filter controls mirror the Prospects tab one-for-one but carry their own
+// state (FILTER_BC_*) so filtering here doesn't affect the Prospects view.
+
+// ---- Populate filter controls from loaded data ----
+function populateBcAssignedFilter() {
+  const sel = document.getElementById("bc-assigned");
+  if (!sel) return;
+  const current = sel.value;
+  const names = [...new Set(PROSPECTS_CACHE.map(p => p.assigned_to).filter(Boolean))].sort();
+  sel.innerHTML = `<option value="">All assigned</option>` +
+    names.map(n => `<option ${n===current?"selected":""}>${escapeHtml(n)}</option>`).join("");
+}
+
+// Same algorithm as populateYearPills (fixed range 2020-2029 plus any outlier
+// years that actually exist in data), targeting the bulk-compose container.
+function populateBcYearPills() {
+  const host = document.getElementById("bc-year-pills");
+  if (!host) return;
+  const actualYears = PROSPECTS_CACHE.map(p => p.potential_entry_year).filter(Boolean);
+  const actualSet = new Set(actualYears);
+  const counts = {};
+  actualYears.forEach(y => { counts[y] = (counts[y]||0)+1; });
+  const fixedRange = [2029,2028,2027,2026,2025,2024,2023,2022,2021,2020];
+  const extras = [...actualSet].filter(y => y<2020 || y>2029).sort((a,b)=>b-a);
+  const allYears = [...extras, ...fixedRange];
+  host.innerHTML = allYears.map(y => {
+    const n = counts[y] || 0;
+    const active = FILTER_BC_YEARS.has(String(y)) ? " active" : "";
+    const dim = n === 0 ? " dim" : "";
+    const badge = n > 0 ? ` <span class="pill-count">${n}</span>` : "";
+    return `<button class="pill-btn${active}${dim}" data-val="${y}">${y}${badge}</button>`;
+  }).join("");
+}
+
+// ---- Source Event dropdown (bulk-compose version) ----
+function toggleBcEventDropdown(evt) {
+  if (evt) evt.stopPropagation();
+  const dd = document.getElementById("bc-event-dropdown");
+  dd.classList.toggle("hidden");
+  if (!dd.classList.contains("hidden")) renderBcEventList();
+}
+
+function renderBcEventList() {
+  const list = document.getElementById("bc-event-list");
+  if (!list) return;
+  const query = (document.getElementById("bc-event-search")?.value || "").toLowerCase().trim();
+  const showAll = document.getElementById("bc-event-showall")?.checked;
+
+  let events = ALL_EVENTS.slice();
+  if (query) events = events.filter(e => e.name.toLowerCase().includes(query));
+  if (!showAll && !query) events = events.slice(0, 10);
+
+  if (events.length === 0) {
+    list.innerHTML = `<div class="muted" style="padding:14px; text-align:center; font-size:0.85rem;">No events match.</div>`;
+    return;
+  }
+
+  list.innerHTML = events.map(e => {
+    const checked = FILTER_BC_EVENTS.has(e.name) ? "checked" : "";
+    const safe = escapeHtml(e.name);
+    return `<label>
+      <input type="checkbox" data-ev="${safe}" ${checked} onchange="toggleBcEvent(this)">
+      <span class="ev-name">${safe}</span>
+      <span class="ev-count">${e.n}</span>
+    </label>`;
+  }).join("");
+}
+
+function toggleBcEvent(cb) {
+  const name = cb.dataset.ev;
+  if (cb.checked) FILTER_BC_EVENTS.add(name); else FILTER_BC_EVENTS.delete(name);
+  updateBcEventButton();
+  renderBulkRecipients();
+}
+
+function updateBcEventButton() {
+  const label = document.getElementById("bc-event-label");
+  const badge = document.getElementById("bc-event-count");
+  if (!label || !badge) return;
+  if (FILTER_BC_EVENTS.size === 0) {
+    label.textContent = "Any event";
+    badge.textContent = "";
+  } else {
+    label.textContent = "Filtered";
+    badge.textContent = ` (${FILTER_BC_EVENTS.size})`;
+  }
+}
+
+function clearBcEventFilter() {
+  FILTER_BC_EVENTS.clear();
+  updateBcEventButton();
+  renderBcEventList();
+  renderBulkRecipients();
+}
+
+// Mirror of clearFilters() in the Prospects tab, reset to empty.
+// Does NOT clear the selection set — selection persists across filter changes,
+// which is how you can, for example, pick some MBA folks, switch to MACC, and
+// add more to the same selection before sending.
+function clearBulkFilters() {
+  FILTER_BC_PROGRAMS.clear();
+  FILTER_BC_YEARS.clear();
+  FILTER_BC_TERMS.clear();
+  FILTER_BC_SOURCES.clear();
+  FILTER_BC_EVENTS.clear();
+  const search = document.getElementById("bc-search");     if (search) search.value = "";
+  const status = document.getElementById("bc-status");     if (status) status.value = "";
+  const assigned = document.getElementById("bc-assigned"); if (assigned) assigned.value = "";
+  const evSearch = document.getElementById("bc-event-search");  if (evSearch) evSearch.value = "";
+  const showAll  = document.getElementById("bc-event-showall"); if (showAll) showAll.checked = false;
+  document.querySelectorAll("#bc-program-pills .pill-btn.active, #bc-year-pills .pill-btn.active, #bc-term-pills .pill-btn.active, #bc-source-pills .pill-btn.active")
+    .forEach(b => b.classList.remove("active"));
+  updateBcEventButton();
+  renderBcEventList();
+  renderBulkRecipients();
+}
 
 function renderBulkRecipients() {
   const list = document.getElementById("bc-list");
   if (!list) return;
   if (PROSPECTS_CACHE.length === 0) {
     list.innerHTML = `<div class="muted" style="padding:20px; text-align:center; font-size:0.88rem;">No prospects loaded yet.</div>`;
+    const vc = document.getElementById("bc-visible-count"); if (vc) vc.textContent = "";
     updateBulkCount();
     return;
   }
 
   const q  = (document.getElementById("bc-search")?.value || "").toLowerCase().trim();
   const st = document.getElementById("bc-status")?.value || "";
+  const showAllStatus = (st === "__all__");
+  const ag = document.getElementById("bc-assigned")?.value || "";
 
-  // Default: active pipeline only — no withdrawn, declined, or DNC
   const eligible = PROSPECTS_CACHE.filter(p => {
+    // DNC is a HARD BLOCK here — never surfaced regardless of filter/status picks.
     if (p.do_not_contact) return false;
-    if (p.application_status === "withdrawn" || p.application_status === "declined") return false;
-    if (st && p.application_status !== st) return false;
+    // Default hides withdrawn/declined; pick a specific status or "Show ALL" to include them.
+    if (!st && (p.application_status === "withdrawn" || p.application_status === "declined")) return false;
+    if (st && !showAllStatus && p.application_status !== st) return false;
+    if (ag && p.assigned_to !== ag) return false;
+
+    // Program (OR logic within the group)
+    if (FILTER_BC_PROGRAMS.size > 0) {
+      const progs = p.programs_of_interest || [];
+      let hit = false;
+      for (const v of FILTER_BC_PROGRAMS) { if (progs.includes(v)) { hit = true; break; } }
+      if (!hit) return false;
+    }
+    // Year
+    if (FILTER_BC_YEARS.size > 0) {
+      if (!p.potential_entry_year || !FILTER_BC_YEARS.has(String(p.potential_entry_year))) return false;
+    }
+    // Term
+    if (FILTER_BC_TERMS.size > 0) {
+      if (!p.potential_entry_term || !FILTER_BC_TERMS.has(p.potential_entry_term)) return false;
+    }
+    // Source
+    if (FILTER_BC_SOURCES.size > 0) {
+      if (!p.source_of_contact || !FILTER_BC_SOURCES.has(p.source_of_contact)) return false;
+    }
+    // Event
+    if (FILTER_BC_EVENTS.size > 0) {
+      if (!p.source_event || !FILTER_BC_EVENTS.has(p.source_event)) return false;
+    }
+    // Search box
     if (q) {
       const hay = [p.first_name, p.last_name, p.preferred_name, p.email, p.organization, p.cell_phone, p.phone]
         .filter(Boolean).join(" ").toLowerCase();
@@ -1278,8 +1451,19 @@ function renderBulkRecipients() {
     return true;
   });
 
+  // Running count of DNC hidden — helpful signal if Harvey wonders why someone's missing
+  const dncHiddenCount = PROSPECTS_CACHE.filter(p => p.do_not_contact).length;
+  const vc = document.getElementById("bc-visible-count");
+  if (vc) {
+    const bits = [`${eligible.length} visible`];
+    if (dncHiddenCount > 0) bits.push(`${dncHiddenCount} DNC hidden`);
+    vc.textContent = bits.join(" · ");
+  }
+
   if (eligible.length === 0) {
-    list.innerHTML = `<div class="muted" style="padding:20px; text-align:center; font-size:0.88rem;">No eligible prospects match.</div>`;
+    list.innerHTML = `<div class="muted" style="padding:20px; text-align:center; font-size:0.88rem;">No eligible prospects match these filters.</div>`;
+    const selectAll = document.getElementById("bc-selectall");
+    if (selectAll) selectAll.checked = false;
     updateBulkCount();
     return;
   }
@@ -1299,11 +1483,10 @@ function renderBulkRecipients() {
     </label>`;
   }).join("");
 
-  // Sync "select all visible" checkbox state — checked only if every visible row is in the selection
+  // Sync "select all visible" checkbox — checked only if every visible row is in selection
   const selectAll = document.getElementById("bc-selectall");
   if (selectAll) {
-    const allChecked = eligible.length > 0 && eligible.every(p => BULK_SELECTION.has(p.prospect_id));
-    selectAll.checked = allChecked;
+    selectAll.checked = eligible.length > 0 && eligible.every(p => BULK_SELECTION.has(p.prospect_id));
   }
 
   updateBulkCount();
